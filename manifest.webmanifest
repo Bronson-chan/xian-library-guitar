@@ -1,0 +1,23 @@
+{
+  "name": "弦库 · 吉他乐谱工作台",
+  "short_name": "弦库",
+  "description": "属于自己的吉他乐谱、练习与同步工作台",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#fffaf3",
+  "theme_color": "#fffaf3",
+  "icons": [
+    {"src":"./assets/app-icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"./assets/app-icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"./assets/app-icon-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"},
+    {"src":"./assets/app-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}
+  ],
+  "shortcuts": [
+    {"name":"添加乐谱","short_name":"添加","url":"./#/add"},
+    {"name":"我的曲谱","short_name":"曲谱","url":"./#/library"}
+  ]
+}

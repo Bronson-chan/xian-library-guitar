@@ -19,6 +19,7 @@ npm run preview
 
 - `catalog/scores.json` 是公开曲库清单；`catalog/pages/` 保存高清谱图，`catalog/media/` 保存歌曲封面和歌手图片。
 - `assets/score-previews/` 保存用于快速显示的轻量谱图预览。每首公开歌曲都必须有对应的预览文件。构建脚本会检查曲目、谱图、封面和预览文件是否齐全。
+- 为避免 GitHub 大量小文件上传限速，公开仓库用 `packed/site-assets.tar.part-*` 保存分片资源包；部署流程会自动还原 `assets/` 和 `catalog/`，最终网站内容不受影响。
 - 公开曲库更新随代码提交触发 GitHub Actions，发布到同一个网址。网页启动时会读取最新清单。
 - 用户在网页里新加的谱图、编辑内容、收藏、练习记录和熟练度保存在各自浏览器的 IndexedDB；它们不会自动上传到 GitHub。要把新增谱图共享给所有访问者，需把图片和曲目资料提交到仓库。
 - 清除网站数据会清除当前设备的本地记录。Netlify 旧域名与 GitHub Pages 是不同网站，浏览器不会自动迁移旧域名的本地记录。
@@ -26,4 +27,3 @@ npm run preview
 ## 自动发布
 
 推送到 `main` 后，`.github/workflows/deploy-pages.yml` 运行构建、完整性检查，并通过 GitHub Pages Actions 发布。仓库 Settings → Pages 的 Source 需设置为 `GitHub Actions`。
-

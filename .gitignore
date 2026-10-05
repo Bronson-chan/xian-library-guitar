@@ -1,0 +1,7 @@
+pages-dist/
+.publish-github.ps1
+assets/
+catalog/
+packed/*.tar
+.DS_Store
+*.log
