@@ -1,5 +1,6 @@
 pages-dist/
 .publish-github.ps1
+.repair-github-tree.ps1
 assets/
 catalog/
 packed/*.tar
