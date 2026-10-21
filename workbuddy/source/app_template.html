@@ -453,7 +453,8 @@ a{color:inherit;text-decoration:none}
 
 /* 搜索联想下拉：输入即动态显示相关歌手 / 曲目 */
 .sugbox{position:fixed;z-index:65;background:#fff;border:1px solid var(--line2);border-radius:12px;padding:6px;
-  box-shadow:0 12px 34px rgba(120,90,60,.18);max-height:62vh;overflow:auto}
+  box-shadow:0 12px 34px rgba(120,90,60,.18);max-height:62vh;overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior-y:contain;touch-action:pan-y;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
 .sugbox[hidden]{display:none}
 .sugbox .sg-h{font-size:11.5px;color:var(--muted2);padding:7px 11px 4px;font-weight:600}
 .sugbox .sg-i{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;cursor:pointer}
@@ -1790,8 +1791,8 @@ function searchMatches(q){
   var amap = {};
   songs.forEach(function(s){ if (s.a.toLowerCase().indexOf(q) >= 0) amap[s.a] = (amap[s.a] || 0) + 1; });
   var artists = Object.keys(amap).map(function(a){ return { a: a, n: amap[a] }; })
-    .sort(function(x, y){ return y.n - x.n || x.a.localeCompare(y.a, 'zh'); }).slice(0, 6);
-  return { songs: songs.slice(0, 8), artists: artists, total: songs.length };
+    .sort(function(x, y){ return y.n - x.n || x.a.localeCompare(y.a, 'zh'); });
+  return { songs: songs, artists: artists, total: songs.length };
 }
 var sugInput = null, sugItems = [], sugIdx = -1;
 function closeSug(){
@@ -1800,9 +1801,17 @@ function closeSug(){
 }
 function positionSug(input){
   var box = el('sugbox'), r = input.getBoundingClientRect();
+  var viewport = window.visualViewport;
+  var topEdge = viewport ? viewport.offsetTop : 0;
+  var bottomEdge = topEdge + (viewport ? viewport.height : innerHeight);
+  var below = Math.max(0, bottomEdge - r.bottom - 18);
+  var above = Math.max(0, r.top - topEdge - 18);
+  var openAbove = below < 140 && above > below;
   box.style.left = r.left + 'px';
   box.style.width = r.width + 'px';
-  box.style.top = (r.bottom + 6) + 'px';
+  box.style.maxHeight = Math.min(420, openAbove ? above : below) + 'px';
+  box.style.top = openAbove ? 'auto' : (r.bottom + 6) + 'px';
+  box.style.bottom = openAbove ? (innerHeight - r.top + 6) + 'px' : 'auto';
 }
 function paintSugSel(){
   sugItems.forEach(function(it, k){ it.classList.toggle('on', k === sugIdx); });
@@ -1819,7 +1828,7 @@ function renderSug(input){
     });
   }
   if (m.songs.length){
-    html += '<div class="sg-h">相关曲目' + (m.total > m.songs.length ? '（共 ' + m.total + ' 首）' : '') + '</div>';
+    html += '<div class="sg-h">相关曲目（共 ' + m.total + ' 首）</div>';
     m.songs.forEach(function(s){
       html += '<div class="sg-i" data-sg="s" data-v="' + s.i + '"><span class="sg-t">' + esc(s.t) + '</span><span class="sg-n">' + esc(s.a) + '</span></div>';
     });
@@ -1827,6 +1836,7 @@ function renderSug(input){
   if (!html) html = '<div class="sg-empty">没有匹配「' + esc(input.value.trim()) + '」的歌手或曲目</div>';
   var box = el('sugbox');
   box.innerHTML = html;
+  box.scrollTop = 0;
   sugItems = Array.prototype.slice.call(box.querySelectorAll('.sg-i'));
   sugIdx = -1; sugInput = input;
   positionSug(input);
@@ -2575,6 +2585,9 @@ function bind(){
   el('sugbox').addEventListener('mousedown', function(e){
     var it = e.target.closest('.sg-i'); if (!it) return;
     e.preventDefault();                                 /* 阻止输入框先失焦 */
+  });
+  el('sugbox').addEventListener('click', function(e){
+    var it = e.target.closest('.sg-i'); if (!it) return;
     activateSug(it);
   });
   document.addEventListener('mousedown', function(e){
@@ -2582,8 +2595,15 @@ function bind(){
     if (e.target.closest('#sugbox') || e.target.closest('#q-home') || e.target.closest('#q-lib') || e.target.closest('#q-tools')) return;
     closeSug();
   });
-  window.addEventListener('scroll', function(){ if (!el('sugbox').hidden) closeSug(); }, true);
+  window.addEventListener('scroll', function(e){
+    var box = el('sugbox');
+    if (box.hidden || e.target === box || box.contains(e.target)) return;
+    closeSug();
+  }, true);
   window.addEventListener('resize', function(){ if (!el('sugbox').hidden && sugInput) positionSug(sugInput); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', function(){
+    if (!el('sugbox').hidden && sugInput) positionSug(sugInput);
+  });
 
   /* 设置页 */
   el('t-export').addEventListener('click', exportJSON);
