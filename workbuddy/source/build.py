@@ -71,6 +71,18 @@ if os.path.exists(_rep_p):
     avatar_map = json.load(open(_rep_p, encoding='utf-8')).get('avatar_map', {})
 
 out = tpl.replace('__SONGS_JSON__', songs_js)
+# Reuse the original catalog's album artwork only on exact title + artist matches.
+# Explicitly verified per-song artwork and user-selected covers still take precedence.
+catalog_path = os.path.join(ROOT, '..', 'catalog', 'scores.json')
+album_covers = {}
+if os.path.exists(catalog_path):
+    original_songs = json.load(open(catalog_path, encoding='utf-8'))['songs']
+    original_by_recording = {(s['title'], s['artist']): s for s in original_songs}
+    for song in songs:
+        original = original_by_recording.get((song['t'], song['a']))
+        if original and original.get('coverUrl', '').startswith('./catalog/media/'):
+            album_covers[song['i']] = 'legacy/' + original['coverUrl'][2:]
+out = out.replace('__VERIFIED_ALBUM_COVERS__', json.dumps(album_covers, ensure_ascii=False))
 out = out.replace('__AVATAR_MAP__',
                   json.dumps(avatar_map, ensure_ascii=False, separators=(',', ':')))
 out = out.replace("var LS_KEY = 'wb_xiangu_v1';",
