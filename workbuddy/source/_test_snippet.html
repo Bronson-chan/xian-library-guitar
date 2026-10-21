@@ -1,0 +1,515 @@
+<script>
+(function(){
+  var R = [];
+  function ok(name, cond, extra){ R.push((cond ? 'PASS' : 'FAIL') + ' ' + name + (extra !== undefined ? ' [' + extra + ']' : '')); }
+  function q(id){ return document.getElementById(id); }
+  function run(){
+    try {
+      /* ---- 1) 谱面缩放：任意比例 ---- */
+      var first = SONGS[0].i;
+      var img = q('dt-img');
+      try { Object.defineProperty(img, 'naturalWidth', { value: 2800, configurable: true }); } catch(e){}
+      openDetail(first);
+      ok('zoom 打开详情', !q('detail').hidden);
+      zoom = 0; applyZoom();
+      ok('zoom 适宽显示为百分比', /^\d+%$/.test(q('dt-zval').textContent), q('dt-zval').textContent);
+      ok('zoom 适应宽度按钮带选中态', !!document.querySelector('.dt-zoom button[data-z="fit"].act'));
+      var avail = Math.max(80, q('dt-canvas').clientWidth - 14);
+      ok('zoom 适宽=可用宽度', Math.abs(parseInt(img.style.width, 10) - avail) <= 1, img.style.width + ' vs ' + avail);
+      document.querySelector('.dt-zoom button[data-z="100"]').click();
+      ok('zoom 原图=100%', q('dt-zval').textContent === '100%', q('dt-zval').textContent);
+      ok('zoom 原图宽度=原图像素', parseInt(img.style.width, 10) === 2800, img.style.width);
+      setZoomPercent(777);
+      ok('zoom 任意比例 777%', q('dt-zval').textContent === '777%' && parseInt(img.style.width,10) === Math.round(2800*7.77), q('dt-zval').textContent + '/' + img.style.width);
+      setZoomPercent(9999);
+      ok('zoom 超上限夹到 1200%', q('dt-zval').textContent === '1200%', q('dt-zval').textContent);
+      setZoomPercent(3);
+      ok('zoom 低于下限夹到 20%', q('dt-zval').textContent === '20%', q('dt-zval').textContent);
+      zoom = 0; applyZoom(); stepZoom(1);
+      ok('zoom 从适应放大得到比例', /%$/.test(q('dt-zval').textContent), q('dt-zval').textContent);
+      var zt = q('dt-zval').textContent;
+      stepZoom(-1); stepZoom(-1);
+      ok('zoom 缩小按钮生效', q('dt-zval').textContent !== zt, q('dt-zval').textContent);
+      closeDetail();
+      ok('zoom 关闭详情', q('detail').hidden);
+
+      /* ---- 1b) 缩放滑块：可左右拖动 ---- */
+      openDetail(first);
+      var sl = q('dt-zslider');
+      ok('slider 滑块存在', !!sl && sl.type === 'range', sl ? sl.type : 'null');
+      ok('slider 刻度 0–1000', sl.min === '0' && sl.max === '1000', sl.min + '-' + sl.max);
+      ok('slider 初值落在适宽刻度', Math.abs(+sl.value - pctToSlider(fitZoomPercent())) <= 1,
+         sl.value + ' vs ' + pctToSlider(fitZoomPercent()).toFixed(1));
+      ok('slider 对数刻度：左端=20%', Math.abs(sliderToPct(0) - 20) < 0.01, sliderToPct(0).toFixed(2));
+      ok('slider 对数刻度：正中=100%', Math.abs(sliderToPct(500) - 100) < 0.01, sliderToPct(500).toFixed(2));
+      ok('slider 对数刻度：右端=1200%', Math.abs(sliderToPct(1000) - 1200) < 0.01, sliderToPct(1000).toFixed(2));
+      ok('slider 反算可逆(1200)', Math.round(pctToSlider(1200)) === 1000, pctToSlider(1200).toFixed(1));
+      ok('slider 反算可逆(100)', Math.round(pctToSlider(100)) === 500, pctToSlider(100).toFixed(1));
+      ok('slider 反算可逆(20)', Math.round(pctToSlider(20)) === 0, pctToSlider(20).toFixed(1));
+      ok('slider 反算可逆(71)', Math.abs(pctToSlider(71) - 500 * Math.log(71 / 20) / Math.log(5)) < 0.5, pctToSlider(71).toFixed(1));
+      function drag(v){
+        sl.value = v;
+        sl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      drag(1000);
+      ok('slider 拖到最右=1200%', Math.round(zoom) === 1200 && q('dt-zval').textContent === '1200%', q('dt-zval').textContent);
+      ok('slider 最右图片=12 倍原图', parseInt(q('dt-img').style.width, 10) === 2800 * 12, q('dt-img').style.width);
+      drag(500);
+      ok('slider 拖到正中=100%', Math.round(zoom) === 100 && parseInt(q('dt-img').style.width, 10) === 2800, q('dt-zval').textContent);
+      drag(0);
+      ok('slider 拖到最左=20%', Math.round(zoom) === 20 && q('dt-zval').textContent === '20%', q('dt-zval').textContent);
+      ok('slider 拖动退出适宽态', !document.querySelector('.dt-zoom button[data-z="fit"].act'));
+      /* 其它入口改动后，滑块应自动归位 */
+      document.querySelector('.dt-zoom button[data-z="100"]').click();
+      ok('slider 点「原图」滑块归中', +q('dt-zslider').value === 500, q('dt-zslider').value);
+      setZoomPercent(777);
+      ok('slider 输入比例后跟随', Math.abs(+q('dt-zslider').value - pctToSlider(777)) <= 1, q('dt-zslider').value + ' vs ' + pctToSlider(777).toFixed(1));
+      stepZoom(1); stepZoom(1);
+      var sv = +q('dt-zslider').value;
+      ok('slider 步进后跟随', Math.abs(sv - pctToSlider(zoom)) <= 1, sv + ' vs ' + pctToSlider(zoom).toFixed(1));
+      document.querySelector('.dt-zoom button[data-z="fit"]').click();
+      ok('slider 点「适应宽度」归位到适宽刻度', Math.abs(+q('dt-zslider').value - pctToSlider(fitZoomPercent())) <= 1,
+         q('dt-zslider').value + ' vs ' + pctToSlider(fitZoomPercent()).toFixed(1));
+      ok('slider 适宽时百分比=适宽比例', q('dt-zval').textContent === Math.round(fitZoomPercent()) + '%', q('dt-zval').textContent);
+      /* 焦点在滑块上时，方向键归滑块、不跳歌 */
+      var curBefore = cur;
+      /* 真实按键的 target 是当前聚焦元素，所以事件必须派发在滑块上、让它冒泡到 document */
+      sl.focus();
+      sl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      ok('slider 聚焦时 → 不跳下一首', cur === curBefore, 'cur=' + cur);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      ok('slider 聚焦时 Esc 仍能关闭', q('detail').hidden);
+      openDetail(first);
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      ok('焦点不在滑块时 → 仍跳下一首', cur !== curBefore, 'cur=' + cur);
+      closeDetail();
+
+      /* ---- 2) 搜索联想 ---- */
+      var m = searchMatches('谭咏麟');
+      ok('sug 谭咏麟命中 4 首', !!m && m.total === 4, m ? ('total=' + m.total) : 'null');
+      ok('sug 有歌手项', !!m && m.artists.filter(function(x){ return x.a === '谭咏麟'; }).length === 1);
+      var ql = q('q-lib');
+      ql.value = '谭咏麟'; renderSug(ql);
+      ok('sug 下拉显示', !q('sugbox').hidden);
+      ok('sug 下拉含歌手名', q('sugbox').innerHTML.indexOf('谭咏麟') >= 0);
+      ok('sug 下拉有可点项', q('sugbox').querySelectorAll('.sg-i').length >= 2, q('sugbox').querySelectorAll('.sg-i').length + '');
+      activateSug(q('sugbox').querySelector('.sg-i[data-sg="a"]'));
+      ok('sug 点歌手后进入曲库', view === 'lib', view);
+      ok('sug 歌手筛选已设', q('f-artist').value === '谭咏麟', q('f-artist').value);
+      ok('sug 曲库计数=4', q('lib-count').textContent === '4', q('lib-count').textContent);
+      ok('sug 点选后下拉收起', q('sugbox').hidden);
+      ql.value = 'zzz没有这个'; renderSug(ql);
+      ok('sug 无匹配有提示', q('sugbox').innerHTML.indexOf('没有匹配') >= 0);
+      ok('sug 空结果时回车不误吞', sugEnter(ql) === false);
+      ql.value = ''; renderSug(ql);
+      ok('sug 清空即收起', q('sugbox').hidden);
+      var s1 = searchMatches('一生中最爱');
+      ok('sug 按曲名可命中', !!s1 && s1.total >= 1, s1 ? ('total=' + s1.total) : 'null');
+
+      /* ---- 3) 添加已有曲谱到正在学 ---- */
+      var before = learningList().length;
+      openPicker();
+      ok('pick 弹层打开', !q('pick').hidden);
+      var rows = q('pk-list').querySelectorAll('.pk-row');
+      ok('pick 列出全部曲目', rows.length === SONGS.length, rows.length + '/' + SONGS.length);
+      var target = null;
+      for (var k = 0; k < SONGS.length; k++){ if (statusOf(SONGS[k].i) !== 'learning'){ target = SONGS[k].i; break; } }
+      ok('pick 找到候选曲目', target !== null, target);
+      togglePick(target);
+      var trow = q('pk-list').querySelector('.pk-row[data-pk="' + target + '"]');
+      ok('pick 勾选计数=1', q('pk-sel').textContent.indexOf('1 首') >= 0, q('pk-sel').textContent);
+      ok('pick 勾选行高亮', !!trow && trow.classList.contains('on'));
+      ok('pick 确认按钮启用', q('pk-ok').disabled === false);
+      confirmPick();
+      ok('pick 确认后关闭', q('pick').hidden);
+      ok('pick 已标为正在学', statusOf(target) === 'learning');
+      ok('pick 正在学 +1', learningList().length === before + 1, before + '->' + learningList().length);
+      showView('home', '');
+      ok('pick 首页最近在学非空', q('home-learning').querySelectorAll('.rcard').length > 0);
+      openPicker();
+      togglePick(target);
+      ok('pick 已在学者不可重复勾选', q('pk-sel').textContent.indexOf('0 首') >= 0, q('pk-sel').textContent);
+      closePicker();
+      ok('pick 取消可关闭', q('pick').hidden);
+      showView('home', '');
+
+      /* ---- 4) 行卡「···」不再被行级 data-open 穿透（本轮修复） ---- */
+      /* 注意：closeDetail/openDetail 内部会 refreshAll()，重渲染后旧节点会游离，
+         必须在每次派发点击前重新取节点，否则事件不冒泡到 .main（曾在测试里踩过） */
+      function freshLibRow(){
+        showView('lib', ''); libMode = 'list'; libPreset = ''; clearLibFilters(); renderLib();
+        return q('lib-grid').querySelector('.lib-row[data-open]');
+      }
+      closeDetail();
+      var row = freshLibRow();
+      ok('menu 列表视图渲染出行卡', !!row);
+      var rowId = row ? +row.dataset.open : -1;
+      ok('menu 行卡含···按钮', !!(row && row.querySelector('.btn-more[data-menu]')));
+      row.querySelector('.btn-more[data-menu]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('menu 点··· 不跳谱面', q('detail').hidden, 'hidden=' + q('detail').hidden);
+      ok('menu 点··· 弹出菜单', !!document.querySelector('.menu'));
+      var miN = document.querySelectorAll('.menu [data-mi]').length;
+      ok('menu 菜单项齐全(>=7)', miN >= 7, miN + '');
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ok('menu 点外部收起菜单', !document.querySelector('.menu'));
+      row = freshLibRow();
+      row.querySelector('button[data-open]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('menu 点「复习」仍进谱面', !q('detail').hidden && cur === rowId, 'cur=' + cur);
+      row = freshLibRow();
+      row.querySelector('.lm').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('menu 点整行仍进谱面', !q('detail').hidden && cur === rowId, 'cur=' + cur);
+      closeDetail();
+      showView('home', '');
+      var hrow = q('home-review').querySelector('.rcard');
+      if (hrow){
+        hrow.querySelector('.mbtn[data-menu]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        ok('menu 首页复习行··· 弹菜单', !!document.querySelector('.menu') && q('detail').hidden, 'menu=' + !!document.querySelector('.menu'));
+        document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      } else {
+        ok('menu 首页复习行存在', false, '未渲染复习行');
+      }
+      showView('home', '');
+
+      /* ---- 5) 行内快捷操作：收藏 / 正在学 / 我会了 / 一键「练过」 ---- */
+      /* 每次点击都会 refreshAll() 重渲染 → 必须重新取节点（同坑 1） */
+      function rowOf(id){ return q('lib-grid').querySelector('.lib-row[data-open="' + id + '"]'); }
+      function clickRow(id, sel){
+        var n = rowOf(id).querySelector(sel);
+        n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+      showView('lib', ''); libMode = 'list'; libPreset = ''; clearLibFilters(); renderLib();
+      var qid = +q('lib-grid').querySelector('.lib-row[data-open]').dataset.open;
+      ok('quick 行卡含三态图标', rowOf(qid).querySelectorAll('.ic-btn').length === 3, rowOf(qid).querySelectorAll('.ic-btn').length + '');
+      ok('quick 行卡含「练过」按钮', !!rowOf(qid).querySelector('.sp-b[data-pract]'));
+      ok('quick 行卡含「复习」按钮', !!rowOf(qid).querySelector('.sp-a[data-open]'));
+
+      /* 归零基线：前面的 pick 用例把 0 号曲标成了「正在学」，状态断言必须先复位 */
+      delete state.fav[qid]; state.status[qid] = 'new'; saveState(); refreshAll();
+      ok('quick 基线已复位', statusOf(qid) === 'new' && !isFav(qid), statusOf(qid) + '/' + isFav(qid));
+
+      var wasFav = isFav(qid);
+      clickRow(qid, '.ic-fav[data-favq]');
+      ok('quick 点★切换收藏', isFav(qid) === !wasFav, wasFav + '->' + isFav(qid));
+      ok('quick 点★不跳谱面', q('detail').hidden);
+      ok('quick 收藏后图标点亮', !!rowOf(qid).querySelector('.ic-fav.on') === isFav(qid));
+      clickRow(qid, '.ic-fav[data-favq]');
+      ok('quick 再点★取消收藏', isFav(qid) === wasFav);
+
+      clickRow(qid, '.ic-learn[data-learnq]');
+      ok('quick 点书=正在学', statusOf(qid) === 'learning', statusOf(qid));
+      ok('quick 正在学图标点亮', !!rowOf(qid).querySelector('.ic-learn.on'));
+      ok('quick 点书不跳谱面', q('detail').hidden);
+      clickRow(qid, '.ic-learn[data-learnq]');
+      ok('quick 再点书可取消', statusOf(qid) === 'new', statusOf(qid));
+
+      clickRow(qid, '.ic-known[data-known]');
+      ok('quick 点勾=我会了', statusOf(qid) === 'known', statusOf(qid));
+      clickRow(qid, '.ic-known[data-known]');
+      ok('quick 再点勾可取消', statusOf(qid) === 'new', statusOf(qid));
+      ok('quick 取消后状态回到未练习', !rowOf(qid).querySelector('.ic-known.on'));
+
+      var p0 = playsOf(qid), l0 = state.logs.length;
+      clickRow(qid, '.sp-b[data-pract]');
+      ok('quick 点「练过」记一次', playsOf(qid) === p0 + 1, p0 + '->' + playsOf(qid));
+      ok('quick 练过写入日志', state.logs.length === l0 + 1, l0 + '->' + state.logs.length);
+      ok('quick 练过不跳谱面', q('detail').hidden);
+      ok('quick 练过不自动转入「最近在学」', statusOf(qid) === 'new', statusOf(qid));
+      ok('quick 行内次数即时刷新', rowOf(qid).querySelector('.ls').textContent.indexOf('练习 ' + playsOf(qid) + ' 次') >= 0, rowOf(qid).querySelector('.ls').textContent);
+
+      var p1 = playsOf(qid), lf0 = learningList().length;
+      openDetail(qid); q('dt-done').click();
+      ok('quick 详情页「完成本次练习」同样+1', playsOf(qid) === p1 + 1, p1 + '->' + playsOf(qid));
+      ok('quick 完成本次练习后自动关闭谱面', q('detail').hidden);
+      ok('quick 完成本次练习后跳回首页', view === 'home', view);
+      ok('quick 完成本次练习不增加「最近在学」', learningList().length === lf0, lf0 + '->' + learningList().length);
+
+      showView('lib', ''); libMode = 'grid'; libPreset = ''; clearLibFilters(); renderLib();
+      var card = q('lib-grid').querySelector('.card');
+      ok('quick 网格卡片含三态图标', !!card && card.querySelectorAll('.ic-btn').length === 3);
+      ok('quick 网格卡片含「练过」', !!card && !!card.querySelector('.sp-b[data-pract]'));
+      var cid = +card.querySelector('.sp-a[data-open]').dataset.open, cp0 = playsOf(cid);
+      card.querySelector('.sp-b[data-pract]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('quick 卡片点练过生效且不跳谱面', playsOf(cid) === cp0 + 1 && q('detail').hidden, cp0 + '->' + playsOf(cid));
+
+      libMode = 'list';
+      showView('home', '');
+      var hc = q('home-learning').querySelector('.rcard');
+      ok('quick 首页学习行卡含练过/更多、无播放键', !!hc && !hc.querySelector('.pbtn')
+         && !!hc.querySelector('.gbtn[data-pract]') && !!hc.querySelector('.mbtn[data-menu]'));
+      var hr = q('home-review').querySelector('.rcard');
+      ok('quick 首页复习行卡含复习/练过/更多、无播放键', !!hr && !hr.querySelector('.pbtn')
+         && !!hr.querySelector('.gbtn[data-open]') && !!hr.querySelector('.gbtn[data-pract]') && !!hr.querySelector('.mbtn[data-menu]'));
+
+      /* ---- 6) 新版外壳 + 右栏（今日练习 / 练习日历） ---- */
+      showView('home', '');
+      var sb = document.querySelector('.sidebar'), rl = document.querySelector('.rail'), mn = document.querySelector('.main-col');
+      ok('ui 侧栏/右栏按比例缩放（非写死）', sb.offsetWidth >= 150 && sb.offsetWidth <= 232 && rl.offsetWidth >= 200 && rl.offsetWidth <= 326,
+         sb.offsetWidth + '/' + rl.offsetWidth);
+      ok('ui 主栏在两栏之间', mn.offsetWidth > 600, mn.offsetWidth + '');
+      /* 三栏比例必须锁在参考图的 14.8% / 62% / 20.8%（否则窗口一窄主栏就被挤瘪） */
+      (function(){
+        var A = document.querySelector('.app').offsetWidth;
+        var pr = function(n){ return n / A; };
+        ok('ui 三栏比例 侧栏≈14.8%', Math.abs(pr(sb.offsetWidth) - 0.148) < 0.012, (pr(sb.offsetWidth)*100).toFixed(1) + '%');
+        ok('ui 三栏比例 右栏≈20.8%', Math.abs(pr(rl.offsetWidth) - 0.208) < 0.012, (pr(rl.offsetWidth)*100).toFixed(1) + '%');
+        ok('ui 三栏比例 主栏≈62%', Math.abs(pr(mn.offsetWidth) - 0.62) < 0.035, (pr(mn.offsetWidth)*100).toFixed(1) + '%');
+      })();
+      /* 曾经踩过的坑：多出一个嵌套 <main>，把首页塞进窄容器、右侧空一大块 —— 必须断言内容撑满主栏 */
+      ok('ui 只有一个 main', document.querySelectorAll('main.main').length === 1, document.querySelectorAll('main.main').length + '');
+      ok('ui 视图撑满主栏（无空 gutter）', (function(){
+           var vh = document.getElementById('v-home');
+           return vh.offsetWidth >= mn.clientWidth - 40;
+         })(), q('v-home').offsetWidth + ' vs ' + mn.clientWidth);
+      ok('ui 速览卡宽≈主栏/4', (function(){
+           var c = document.querySelector('.quick-grid .quick');
+           return c && Math.abs(c.offsetWidth - (q('quick-grid') ? 0 : 0) - 0) >= 0 &&
+                  c.offsetWidth > (mn.clientWidth - 60) / 4 - 20;
+         })(), document.querySelector('.quick-grid .quick').offsetWidth + '');
+      ok('ui 右栏只在发现页出现', !q('main').classList.contains('no-rail'));
+      ok('ui 侧栏 8 项导航（含歌手）', document.querySelectorAll('#nav button').length === 8, document.querySelectorAll('#nav button').length + '');
+      ok('ui 侧栏无同步点/无更多工具（对齐效果图）',
+         !document.querySelector('.sync') && !document.getElementById('navBottom')
+         && document.getElementById('nav').children.length === 8);
+      ok('ui 侧栏品牌文案对齐效果图',
+         document.querySelector('.brand b').textContent === '音乐时光'
+         && document.querySelector('.brand i').textContent === '让练习成为一种享受');
+      ok('ui 侧栏导航文字为深炭灰（非蓝灰）', (function(){
+           var on = document.querySelector('#nav button.on');
+           var off = document.querySelector('#nav button:not(.on)');
+           return getComputedStyle(off).color === 'rgb(86, 85, 86)'
+             && getComputedStyle(on).color === 'rgb(209, 91, 44)';
+         })(), getComputedStyle(document.querySelector('#nav button:not(.on)')).color);
+      ok('ui 侧栏底部=奶白卡+唱机照片+圆形箭头钮（对齐新参考图）', (function(){
+           var c = document.querySelector('.mp-card');
+           var cov = document.querySelector('.mp-cover');
+           var go = document.querySelector('.mp-go');
+           var img = document.getElementById('mpCover');
+           if(!c || !cov || !go || !img) return false;
+           /* 照片比例必须等于参考图 951:710（object-fit 不拉伸） */
+           var cr = cov.getBoundingClientRect();
+           var ar = cr.width / cr.height;
+           /* 整卡可点；旧的白圆播放钮必须已移除，避免与照片里唱片标签的三角重影 */
+           return getComputedStyle(img).objectFit === 'cover'
+             && Math.abs(ar - 951/710) < 0.02
+             && getComputedStyle(c).cursor === 'pointer'
+             && c.getAttribute('role') === 'button'
+             && !document.querySelector('.mp-play');
+         })());
+      ok('ui 侧栏有「歌手」入口', (function(){
+           var b = document.querySelector('#nav button[data-view="artists"]');
+           return !!b && b.textContent.indexOf('歌手') >= 0;
+         })());
+      ok('歌手页：标题+副标+3列卡片(头像/歌名/曲目数/箭头)', (function(){
+           showView('artists','');
+           var rows = document.querySelectorAll('#arGrid .arow');
+           if(!rows.length) return false;
+           if(getComputedStyle(document.getElementById('arGrid')).gridTemplateColumns.split(' ').length !== 3) return false;
+           if(document.getElementById('arTitle').textContent !== '按歌手找') return false;
+           if(document.getElementById('arSub').textContent !== '选择一位歌手，再进入对应曲目') return false;
+           var r0 = rows[0];
+           return !!r0.querySelector('.av') && !!r0.querySelector('.artx b')
+             && !!r0.querySelector('.artx i') && !!r0.querySelector('.argo')
+             && /首曲目$/.test(r0.querySelector('.artx i').textContent);
+         })());
+      ok('歌手页：点歌手→该歌手曲目，可返回列表', (function(){
+           var first = document.querySelector('#arGrid .arow');
+           if(!first) return false;
+           var name = first.getAttribute('data-ar');
+           first.click();
+           var g = document.getElementById('arGrid'), s = document.getElementById('arSongs');
+           var songs = s.querySelectorAll('.rowcard').length;
+           var okTitle = document.getElementById('arTitle').textContent === name;
+           var okBack = /返回歌手/.test(document.getElementById('arBack').textContent);
+           /* 必须查「真正有没有显示」，不能只看 hidden 属性：
+              作者样式的 display:grid/flex 会盖掉 UA 的 [hidden]{display:none} */
+           var okGridGone = getComputedStyle(g).display === 'none' && g.offsetHeight === 0;
+           var okSongsShow = s.offsetHeight > 0;
+           var okSongsNearTop = s.getBoundingClientRect().top < 400;
+           document.getElementById('arBack').click();
+           var backOk = getComputedStyle(g).display !== 'none' && g.offsetHeight > 0
+                     && getComputedStyle(s).display === 'none';
+           showView('home','');
+           return songs > 0 && okTitle && okBack && okGridGone && okSongsShow && okSongsNearTop && backOk;
+         })());
+      ok('歌手页：曲目数与实际一致', (function(){
+           var m = {};
+           SONGS.forEach(function(s){ m[s.a] = (m[s.a]||0)+1; });
+           var bad = 0;
+           [].forEach.call(document.querySelectorAll('#arGrid .arow'), function(r){
+             var n = +(r.querySelector('.artx i').textContent.replace(/\D/g,''));
+             if(m[r.getAttribute('data-ar')] !== n) bad++;
+           });
+           return document.querySelectorAll('#arGrid .arow').length === Object.keys(m).length && bad === 0;
+         })());
+      ok('歌手页：顶部有歌手搜索框且默认可见', (function(){
+           showView('artists','');
+           var s = document.getElementById('arSearch'), i = document.getElementById('q-ar');
+           return !!s && !!i && getComputedStyle(s).display !== 'none' && s.offsetHeight > 0
+             && /搜索歌手/.test(i.placeholder);
+         })());
+      ok('歌手搜索：输入即过滤 + 大小写不敏感', (function(){
+           var inp = document.getElementById('q-ar');
+           var total = document.querySelectorAll('#arGrid .arow').length;
+           inp.value = '王'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           var hit = document.querySelectorAll('#arGrid .arow').length;
+           var allHit = [].every.call(document.querySelectorAll('#arGrid .arow'), function(b){
+             return b.getAttribute('data-ar').indexOf('王') >= 0; });
+           inp.value = 'beyond'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           var lower = document.querySelectorAll('#arGrid .arow').length;
+           var names = [].map.call(document.querySelectorAll('#arGrid .arow'), function(b){return b.getAttribute('data-ar');});
+           inp.value = ''; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           var back = document.querySelectorAll('#arGrid .arow').length;
+           return hit > 0 && hit < total && allHit && lower === 1
+             && names[0] === 'BEYOND' && back === total;
+         })());
+      ok('歌手搜索：无匹配给空状态 + 清空按钮 + 去曲库', (function(){
+           var inp = document.getElementById('q-ar');
+           inp.value = 'zzz不存在'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           var empty = document.querySelector('#arGrid .ar-empty');
+           var okEmpty = !!empty && empty.offsetHeight > 0
+             && /没有匹配/.test(empty.textContent);
+           var okClear = !!document.querySelector('#arGrid [data-arclear]');
+           var okLib = !!document.querySelector('#arGrid [data-argolib]');
+           inp.value = '不分手的恋爱'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           var noArtist = !!document.querySelector('#arGrid .ar-empty');
+           var emTxt = noArtist ? document.querySelector('#arGrid .ar-empty').textContent : '';
+           var okHint = noArtist && /曲库里有/.test(emTxt) && /1 首同名谱子/.test(emTxt);
+           /* 点「在曲库搜」应跳曲库并带上搜索词 */
+           document.querySelector('#arGrid [data-argolib]').click();
+           var okGo = document.getElementById('v-lib').classList.contains('on')
+                   && document.getElementById('q-lib').value === '不分手的恋爱';
+           showView('artists','');
+           inp.value = ''; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           return okEmpty && okClear && okLib && okHint && okGo;
+         })());
+      ok('歌手搜索：看曲目时收框、返回后恢复', (function(){
+           var inp = document.getElementById('q-ar');
+           inp.value = '王'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           var card = document.querySelector('#arGrid .arow');
+           card.click();
+           var hiddenWhileSongs = getComputedStyle(document.getElementById('arSearch')).display === 'none';
+           document.getElementById('arBack').click();
+           var shownBack = document.getElementById('arSearch').offsetHeight > 0;
+           var kept = document.getElementById('q-ar').value === '王';   /* 返回后保留搜索词 */
+           inp.value = ''; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           return hiddenWhileSongs && shownBack && kept;
+         })());
+      ok('歌手搜索：回车直接进第一个结果', (function(){
+           var inp = document.getElementById('q-ar');
+           inp.value = '陶喆'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           inp.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+           var okOpen = document.getElementById('arTitle').textContent === '陶喆'
+                     && getComputedStyle(document.getElementById('arSongs')).display !== 'none';
+           document.getElementById('arBack').click();
+           inp.value = ''; inp.dispatchEvent(new Event('input',{bubbles:true}));
+           return okOpen;
+         })());
+      ok('ui 迷你播放器在侧栏内', (function(){
+           var mp = document.querySelector('.mp-card');
+           if(!mp) return false;
+           var r = mp.getBoundingClientRect();
+           var sbr = sb.getBoundingClientRect();
+           /* 横向必须完全落在侧栏内；纵向允许在矮窗口下靠侧栏滚动触达 */
+           return r.left >= sbr.left - 1 && r.right <= sbr.right + 1 && r.height > 60;
+         })());
+      ok('ui 侧栏标语可见', document.querySelector('.side-quote').offsetHeight > 20);
+      ok('ui hero 有搜索框/日期/引用', !!q('q-home') && !!q('heroDate') && !!q('heroWeek')
+         && q('heroDate').textContent.indexOf('/') > 0, q('heroDate').textContent);
+      ok('ui 四张速览卡', document.querySelectorAll('.quick-grid .quick').length === 4);
+      ok('ui 速览卡用参考图实拍底图且有跳转钮', (function(){
+           var cards = [].slice.call(document.querySelectorAll('.quick-grid .quick'));
+           return cards.length === 4
+             && cards.every(function(c){
+                  var bg = getComputedStyle(c).backgroundImage;
+                  return /card\d\.jpg/.test(bg);
+                })
+             && document.querySelectorAll('.quick .qgo').length === 4;
+         })());
+      /* 今日练习：进度环 + 三项统计 */
+      var C = 2 * Math.PI * 60, off = +q('ringFg').getAttribute('stroke-dashoffset');
+      ok('ui 进度环 dasharray 正确', Math.abs(+q('ringFg').getAttribute('stroke-dasharray') - C) < 0.5, q('ringFg').getAttribute('stroke-dasharray'));
+      ok('ui 进度环未满时 offset>0', off > 0 && off <= C, off.toFixed(1));
+      ok('ui 环内显示 已完成/目标', q('ringV').textContent !== '' && q('ringG').textContent === '5', q('ringV').textContent + '/' + q('ringG').textContent);
+      ok('ui 统计有练习时长', /分钟$/.test(q('stTime').textContent), q('stTime').textContent);
+      ok('ui 统计有完成歌曲', /首$/.test(q('stSong').textContent), q('stSong').textContent);
+      ok('ui 统计有连续练习', /天$/.test(q('stStreak').textContent), q('stStreak').textContent);
+      ok('ui 练习日历 42 格 + 7 个周标题', q('calBody').querySelectorAll('.gd > span').length === 42
+         && q('calBody').querySelectorAll('.wk span').length === 7);
+      ok('ui 日历今天高亮唯一', q('calBody').querySelectorAll('.today').length === 1);
+      ok('ui 日历标题为当前月', q('calNav').textContent.indexOf((+TODAY.slice(0,4)) + '年' + (+TODAY.slice(5,7)) + '月') === 0, q('calNav').textContent);
+      q('calNav').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ok('ui 日历可翻到下个月', calMonth !== '' && q('calNav').textContent.indexOf('›') > 0, q('calNav').textContent);
+      calMonth = ''; renderRail();
+      ok('ui 继续练习按钮存在', !!q('railGo'));
+      /* 切到别的页面：右栏应隐藏 */
+      showView('lib', '');
+      ok('ui 非发现页隐藏右栏', q('main').classList.contains('no-rail') && document.querySelector('.rail').offsetWidth === 0);
+      showView('home', '');
+      ok('ui 回到发现页恢复右栏', !q('main').classList.contains('no-rail') && document.querySelector('.rail').offsetWidth > 0);
+
+      /* ---- 7) 最近在学页 / 下载页 ---- */
+      showView('learning', '');
+      ok('page 最近在学页可打开', view === 'learning' && !q('v-learning').classList.contains('on') === false);
+      el('learn-count').textContent = el('learn-count').textContent;   /* 渲染已发生 */
+      ok('page 最近在学行卡渲染', q('learn-body').querySelectorAll('.rcard').length === learningList().length,
+         q('learn-body').querySelectorAll('.rcard').length + '/' + learningList().length);
+      ok('page 最近在学有添加曲谱入口', !!q('btn-add-learning2'));
+
+      /* ---- 7b) 新学类目：新谱自动归入 + 「我学会了」移出 ---- */
+      var nls = SONGS.filter(function(s){ return s.nl; });
+      ok('新学 曲库里有带 nl 标记的新谱', nls.length >= 1, nls.length + '');
+      var nlsong = nls.filter(function(s){ return s.t === '你要的爱'; })[0];
+      ok('新学 《你要的爱》已入库且歌手正确', !!nlsong && nlsong.a === '戴佩妮', nlsong ? nlsong.a : 'missing');
+      ok('新学 新谱自动归入「新学」', !!nlsong && statusOf(nlsong.i) === 'learning', nlsong ? statusOf(nlsong.i) : '-');
+      ok('新学 重复 seed 不会重复计数', (function(){
+           var before = learningList().length;
+           var n = seedNewLearn();
+           return n === 0 && learningList().length === before;
+         })());
+      var nlBefore = learningList().length;
+      openDetail(nlsong.i);
+      ok('新学 谱面页有「我学会了」按钮', (function(){
+           var b = q('dt-known');
+           return !!b && b.offsetHeight > 0 && b.textContent.indexOf('我学会了') >= 0;
+         })(), q('dt-known') ? q('dt-known').textContent : 'none');
+      q('dt-known').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('新学 点「我学会了」→ 状态变已学会', statusOf(nlsong.i) === 'known', statusOf(nlsong.i));
+      ok('新学 点「我学会了」→ 移出「新学」', learningList().length === nlBefore - 1,
+         nlBefore + '->' + learningList().length);
+      ok('新学 已学会后再次 seed 不回填', seedNewLearn() === 0 && statusOf(nlsong.i) === 'known');
+      ok('新学 按钮点了变「已学会」', q('dt-known-t').textContent === '已学会', q('dt-known-t').textContent);
+      q('dt-known').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('新学 再点一次撤回 → 回到「新学」', statusOf(nlsong.i) === 'learning', statusOf(nlsong.i));
+      closeDetail();
+      ok('新学 页面标题已改为「新学」', q('v-learning').querySelector('h2').textContent === '新学',
+         q('v-learning').querySelector('h2').textContent);
+      showView('lib', '');
+      ok('新学 曲库「状态」筛选含「新学」', [].some.call(q('f-status').options, function(o){
+           return o.textContent === '新学';
+         }), [].map.call(q('f-status').options, function(o){ return o.textContent; }).join('/'));
+
+      showView('download', '');
+      ok('page 下载页可打开', view === 'download');
+      ok('page 下载列表 = 全库首数', q('dl-list').querySelectorAll('.dlrow').length === SONGS.length, q('dl-list').querySelectorAll('.dlrow').length + '/' + SONGS.length);
+      var dl0 = dlList()[0].i;
+      q('dl-list').querySelector('.box[data-dl="' + dl0 + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('page 勾选计入已选', dlCount() === 1 && q('dl-sel').textContent.indexOf('1 首') >= 0, q('dl-sel').textContent);
+      q('dl-list').querySelector('.box[data-dl="' + dl0 + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      ok('page 再点取消勾选', dlCount() === 0);
+      q('q-dl').value = '谭咏麟'; renderDownload();
+      ok('page 下载页可搜索', q('dl-list').querySelectorAll('.dlrow').length > 0 && q('dl-list').querySelectorAll('.dlrow').length < SONGS.length,
+         q('dl-list').querySelectorAll('.dlrow').length + '');
+      q('q-dl').value = ''; renderDownload();
+      showView('home', '');
+      showView('home', '');
+    } catch(err){
+      R.push('FAIL 异常 ' + (err && err.stack ? err.stack.split('\n').slice(0,2).join(' | ') : err));
+    }
+    var pass = R.filter(function(x){ return x.indexOf('PASS') === 0; }).length;
+    var fail = R.filter(function(x){ return x.indexOf('FAIL') === 0; }).length;
+    document.title = 'TESTRESULT ' + pass + 'P/' + fail + 'F | ' + R.join(' || ');
+  }
+  if (document.readyState === 'complete') run();
+  else window.addEventListener('load', run);
+})();
+</script>

@@ -1,0 +1,2796 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>弦库 · 吉他谱管理台</title>
+<meta name="theme-color" content="#FAF5EF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="弦库">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-512.png">
+<!-- 单文件应用：全部样式与脚本内联；谱面图片为本地相对路径资源，零外部依赖 -->
+<style>
+:root{
+  --bg:#FAF5EF; --panel:#FBF6F0; --surface:#FFFFFF;
+  --brand:#FF8234; --brand-soft:#FDE7DC; --brand-soft2:#FFF1E7;
+  --chip:#F5F2EE; --nav:#6E7C8D; --muted:#8C8C8C; --muted2:#A9A29A;
+  --ink:#2B2B2B; --ink2:#4B5563;
+  --line:#F2ECE4; --line2:#E8E1D8; --green:#45A26B;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);padding:0;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Hiragino Sans GB",Roboto,sans-serif;
+  font-size:15px;-webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,select{font-family:inherit}
+a{color:inherit;text-decoration:none}
+/* hidden 属性必须真的隐藏：作者样式里的 display 会盖掉 UA 的 [hidden]{display:none}
+   （踩过：.ar-grid{display:grid} 让 el('arGrid').hidden=true 失效，点了歌手仍显示 90 张卡） */
+[hidden]{display:none!important}
+
+/* ---------- 外壳：左导航 + 主区 + 右栏 三栏 ----------
+   关键：栏宽用 vw 锁比例，不是写死像素。
+   参考图 1570 宽下 = 232 / 974 / 326（14.8% / 62% / 20.8%），
+   窗口更窄时同比缩小，主栏始终占 62% —— 否则固定 232+326 会把主栏挤瘪，四张速览卡被压成小条。 */
+.app{
+  max-width:1570px;margin:0 auto;background:var(--panel);min-height:100vh;
+  display:grid;grid-template-columns:clamp(158px,14.8vw,232px) minmax(0,1fr);
+}
+
+/* ---------- 侧栏 ---------- */
+/* align-self:start + sticky + 100vh：侧栏固定一屏高，底部照片与迷你播放器永远贴在可视区底部
+   （否则侧栏会被主栏内容撑高，margin-top:auto 把它们顶到折叠线以下）。
+   窗口很矮时：照片区 flex 自适应压缩，剩余部分侧栏自身可滚动，不会把播放器挤到够不着。 */
+.sidebar{background:var(--panel);padding:22px 18px 0;display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;align-self:start;overflow-y:auto;overflow-x:hidden}
+.brand{display:flex;align-items:center;gap:11px}
+.brand .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(140deg,#F97A3D,#F2600F);display:grid;place-items:center;flex:0 0 46px;
+  box-shadow:0 4px 12px rgba(240,96,15,.28)}
+.brand .logo svg{width:26px;height:26px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.brand b{font-size:23px;font-weight:800;color:#1F1C19;display:block;line-height:1.2;letter-spacing:.3px}
+.brand i{font-size:12.5px;color:#A29A92;font-style:normal;display:block;margin-top:5px;letter-spacing:.2px}
+.nav{display:flex;flex-direction:column;gap:4px;margin-top:26px}
+.nav button{display:flex;align-items:center;gap:13px;height:47px;padding:0 14px;border-radius:12px;
+  color:#565556;font-size:16.5px;font-weight:500;transition:background .15s,color .15s;text-align:left;width:100%}
+.nav button svg{width:21px;height:21px;flex:0 0 21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav button:hover{background:#F7EFE6}
+.nav button.on{background:#FBEFE3;color:#D15B2C;font-weight:600}
+
+/* 侧栏底部：亮色植物照片铺满；奶白圆角卡压在其上，内含唱机照片 + 「随机一首 / 发现新歌」+ 右侧圆形箭头按钮
+   整张卡可点 = 随机播一首（见 #mpCard 的 click/keydown 绑定） */
+/* 背景衔接：照片顶部与卡片区域各加一层柔和渐变，照片自然过渡到玻璃卡，消除硬接缝 */
+.side-foot{margin-top:auto;padding:0 8px 0 10px;position:relative;flex:1 1 auto;min-height:0;
+  display:flex;flex-direction:column;justify-content:flex-end}
+.side-photo{position:absolute;left:-10px;right:-8px;top:-8px;bottom:0;
+  background:url('assets/ui/side.jpg') 50% 100%/100% auto no-repeat}
+/* 顶部淡出 + 底部提亮，让照片与玻璃卡、页面底色三者平滑过渡 */
+.side-photo::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(249,242,235,.55) 0%,rgba(249,242,235,0) 22%,
+    rgba(255,252,248,0) 55%,rgba(255,252,248,.28) 100%)}
+.side-quote{position:absolute;left:20px;top:112px;z-index:1;right:20px;
+  color:#6B6055;font-size:17px;font-weight:600;line-height:1.62;letter-spacing:.2px}
+/* 卡内所有尺寸按「参考图 1076px 宽卡」等比缩到实际 176px 宽（×0.830），
+   所以圆角 9/11、照片比例 951:710、标题 17px、副标 12px、箭头钮 26px */
+.mp-card{position:relative;z-index:1;border-radius:9px;cursor:pointer;
+  background:linear-gradient(180deg,#FFFBF4 0%,#FDF6EC 45%,#FBF3E8 100%);
+  border:1px solid rgba(255,255,255,.72);
+  padding:11px 10px 17px;box-shadow:0 8px 22px rgba(120,90,55,.15);
+  transition:transform .16s ease,box-shadow .16s ease}
+.mp-card:active{transform:scale(.985);box-shadow:0 5px 14px rgba(120,90,55,.13)}
+.mp-card:focus-visible{outline:2px solid #C79A5B;outline-offset:2px}
+.mp-cover{position:relative;width:100%;aspect-ratio:951/710;border-radius:11px;overflow:hidden;background:#E7DBCB}
+.mp-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.mp-foot{display:flex;align-items:center;justify-content:space-between;margin-top:13px;padding:0 2px 0 3px}
+.mp-txt b{display:block;font-size:17px;font-weight:800;color:#1D1B18;letter-spacing:0;line-height:1.15}
+.mp-txt span{display:block;font-size:12px;font-weight:500;color:#7C7369;margin-top:7px;line-height:1.1}
+.mp-go{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:#F9E9DA;
+  display:grid;place-items:center}
+.mp-go svg{width:16px;height:16px;fill:none;stroke:#2A2723;stroke-width:2.1;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- 主区 ---------- */
+.main{display:grid;grid-template-columns:minmax(0,1fr) clamp(216px,20.8vw,326px);min-width:0;align-items:start}
+.main.no-rail{grid-template-columns:minmax(0,1fr)}
+.main.no-rail .rail{display:none}
+.main-col{min-width:0;padding:6px clamp(16px,1.7vw,27px) 44px 0}
+.rail{padding:6px clamp(12px,1.5vw,23px) 0 0;display:flex;flex-direction:column;gap:clamp(14px,1.4vw,22px)}
+.view{display:none}
+.view.on{display:block}
+
+/* hero */
+.hero{position:relative;height:258px;border-radius:22px;overflow:hidden;
+  background:#3A2A18 url('assets/ui/hero.jpg') center/cover no-repeat}
+/* 底图已自带参考图那层左侧暗渐变；这里只补一层极轻的压暗，保证白字在任何窗口都清晰 */
+.hero::before{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(28,16,6,.20) 0%,rgba(28,16,6,.10) 30%,rgba(28,16,6,0) 55%,rgba(28,16,6,0) 74%,rgba(28,16,6,.14) 100%)}
+.hero-text{position:absolute;left:32px;top:46px;z-index:1}
+.hero-text h1{font-size:37px;font-weight:800;color:#fff;letter-spacing:.5px;line-height:1.18;text-shadow:0 2px 12px rgba(30,16,4,.40)}
+.hero-text p{margin-top:12px;font-size:20px;color:rgba(255,255,255,.92);text-shadow:0 1px 8px rgba(30,16,4,.38)}
+.hero-search{position:absolute;left:24px;bottom:42px;z-index:1;width:660px;max-width:calc(100% - 300px);height:44px;
+  border-radius:22px;background:#fff;display:flex;align-items:center;gap:12px;padding:0 20px;box-shadow:0 4px 16px rgba(50,25,8,.20)}
+.hero-search>svg{width:18px;height:18px;flex:0 0 18px;stroke:#9A938C;fill:none;stroke-width:2;stroke-linecap:round}
+.hero-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:14.5px;color:var(--ink)}
+.hero-search input::placeholder{color:#A69E95}
+.hero-search .hfilter{width:18px;height:18px;flex:0 0 18px;stroke:#C6BEB4;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;cursor:pointer}
+.hero-search .hfilter:hover{stroke:var(--brand)}
+.hero-side{position:absolute;right:24px;bottom:22px;z-index:1;color:#fff;width:224px;
+  background:rgba(26,15,5,.26);border:1px solid rgba(255,255,255,.16);border-radius:16px;
+  padding:18px 20px 19px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:0 8px 28px rgba(30,16,4,.22)}
+.hero-side .hd{font-size:28px;font-weight:700;letter-spacing:1px;display:flex;align-items:baseline;gap:10px;line-height:1.1}
+.hero-side .hd span{font-size:13.5px;font-weight:500;opacity:.88;letter-spacing:.3px}
+.hero-side .hq{margin-top:13px;padding-left:13px;border-left:2px solid rgba(255,255,255,.55);
+  font-size:13.5px;line-height:1.75;opacity:.94;letter-spacing:.2px}
+
+/* 搜索（其它页面沿用） */
+.search{height:46px;background:var(--surface);border:1px solid #F2EDE5;border-radius:999px;display:flex;align-items:center;gap:10px;padding:0 20px;margin-bottom:22px}
+.search svg{width:17px;height:17px;flex:0 0 17px;stroke:#A8A29C;fill:none;stroke-width:2;stroke-linecap:round}
+.search input{flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:15px;color:var(--ink)}
+.search input::placeholder{color:#A8A29C}
+
+/* 快捷卡：底图直接用参考图裁出的实拍卡面（黑胶/日历/吉他/耳机），文字与图标仍为 HTML 以保证可选中/可交互 */
+.quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;margin-top:8px}
+.quick{position:relative;height:161px;border-radius:16px;padding:0;display:flex;flex-direction:column;
+  align-items:flex-start;overflow:hidden;transition:transform .15s,box-shadow .15s;text-align:left;
+  background-repeat:no-repeat;background-position:center;background-size:100% 100%}
+.quick:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(150,110,70,.13)}
+.quick .qi{position:absolute;left:24px;top:21px;width:57px;height:57px;border-radius:18px;background:rgba(255,255,255,.38);
+  display:grid;place-items:center}
+.quick .qi svg{width:28px;height:28px;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.quick .qt{position:absolute;left:25px;top:88px;font-size:19px;font-weight:800;color:#141210;letter-spacing:.2px;white-space:nowrap}
+.quick .qs{position:absolute;left:26px;top:122px;font-size:14.5px;color:#6B655E;max-width:186px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.quick .qgo{position:absolute;right:18px;top:110px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.60);
+  display:grid;place-items:center;box-shadow:0 2px 7px rgba(150,110,70,.13)}
+.quick .qgo svg{width:19px;height:19px;stroke:var(--brand);fill:none;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* 区块标题 */
+.sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:34px 0 16px}
+.sec-head h2{font-size:21px;font-weight:700;color:var(--ink)}
+.sec-head p{font-size:13px;color:var(--muted2);margin-top:7px}
+.sec-head .right{display:flex;align-items:center;gap:18px;flex:0 0 auto;padding-bottom:2px}
+.hlink{font-size:14px;color:#8C8C8C;display:inline-flex;align-items:center;gap:4px;cursor:pointer;
+  background:none;border:0;white-space:nowrap}
+.hlink:hover{color:var(--brand)}
+.hlink.add{color:var(--brand);font-weight:600}
+.hlink svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+/* 旧的节点头/文字链规则已由 .hlink 取代（.link 保留给兼容旧标记） */
+.link{font-size:13px;color:var(--nav);cursor:pointer;white-space:nowrap}
+.link:hover{color:var(--brand)}
+
+/* 按钮 */
+.btn-soft{background:var(--brand-soft);color:var(--brand);font-weight:600;font-size:14px;border-radius:8px;padding:9px 18px;transition:filter .15s}
+.btn-soft:hover{filter:brightness(.97)}
+.btn-soft.sm{padding:8px 16px;font-size:13.5px}
+.btn-line{background:var(--surface);border:1px solid var(--line2);border-radius:8px;font-size:13px;color:var(--nav);padding:7px 13px;display:inline-flex;align-items:center;gap:6px}
+.btn-line:hover{border-color:#DCD5CB}
+.btn-line svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.btn-more{background:var(--surface);border:1px solid var(--line2);border-radius:8px;width:52px;color:var(--nav);font-size:16px;letter-spacing:1px;line-height:1}
+.btn-more:hover{border-color:#DCD5CB}
+.btn-solid{background:var(--brand);color:#fff;font-weight:600;font-size:14px;border-radius:8px;padding:9px 18px}
+
+/* 行内快捷操作：三态图标（收藏 / 正在学 / 我会了）+「复习｜练过」分割按钮
+   设计取向：平时只露「复习｜练过 ···」三项，不增加视觉噪音；
+   鼠标移到该行才浮现三个状态图标，已勾选的状态则常驻显示（一眼可见进度）。 */
+.ic-btn{width:27px;height:27px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;border:1px solid transparent;flex:none;color:#B4AA9D;padding:0;
+  opacity:0;pointer-events:none;transition:opacity .14s,background .14s,color .14s}
+.ic-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round;display:block}
+.ic-btn:hover{background:#F4EEE6;color:var(--nav)}
+.ic-btn.on{opacity:1;pointer-events:auto;background:var(--brand-soft);color:var(--brand)}
+.ic-fav.on svg{fill:var(--brand)}
+.lib-row:hover .ic-btn,.rowcard:hover .ic-btn,.card:hover .ic-btn,
+.lib-row:focus-within .ic-btn,.rowcard:focus-within .ic-btn,.card:focus-within .ic-btn{opacity:1;pointer-events:auto}
+.sp{display:inline-flex;align-items:stretch;border-radius:8px;overflow:hidden;background:var(--brand-soft);flex:none}
+.sp button{font-family:inherit;font-size:13.5px;font-weight:600;line-height:1;padding:8px 13px;white-space:nowrap;color:var(--brand)}
+.sp .sp-a:hover{filter:brightness(.965)}
+.sp .sp-b{background:var(--surface);color:#8C6134;box-shadow:inset 1px 0 0 #F1E2D4}
+.sp .sp-b:hover{background:#FFF6EE}
+
+/* 卡片 */
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px;display:flex;flex-direction:column}
+.card-img{width:100%;aspect-ratio:1/1;border-radius:11px;overflow:hidden;background:#F2EEE8;cursor:pointer;position:relative}
+.card-img img{width:100%;height:100%;object-fit:cover;display:block}
+.card-img::after{content:'';position:absolute;inset:0;border-radius:11px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);pointer-events:none}
+.card-title{font-size:17px;font-weight:600;margin-top:11px;cursor:pointer;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-title:hover{color:var(--brand)}
+.card-artist{font-size:13px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:6px;min-width:0}
+.card-artist .an{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-tags{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.tag{background:var(--chip);color:var(--nav);font-size:11px;border-radius:4px;padding:3px 8px;white-space:nowrap}
+.card-actions{display:flex;align-items:center;gap:7px;margin-top:12px}
+.card-actions .sp{flex:1}
+.card-actions .sp button{flex:1;padding-left:6px;padding-right:6px}
+
+/* 字标圆形头像 */
+.av{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;
+  font-weight:600;flex:none;letter-spacing:-.02em;width:20px;height:20px;font-size:9.5px;
+  text-shadow:0 1px 1px rgba(0,0,0,.18);-webkit-user-select:none;user-select:none}
+.card-artist .av{width:21px;height:21px;font-size:10px}
+.rc-sub .av{width:19px;height:19px;font-size:9px;display:inline-flex}
+.rc-sub{display:flex;align-items:center;gap:6px;min-width:0}
+.rc-sub-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 歌手墙 */
+.artist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px}
+.artist{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;
+  padding:12px 4px;border-radius:13px;background:transparent;border:0;font-family:inherit}
+.artist:hover{background:#FBF7F1}
+.artist .av{width:54px;height:54px;font-size:22px}
+.artist .an{font-size:12.5px;color:var(--ink);text-align:center;line-height:1.25;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.artist .ac{font-size:11px;color:var(--muted)}
+
+.rowcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:13px;cursor:pointer}
+.rowcard:hover{box-shadow:0 3px 12px rgba(160,120,80,.07)}
+.thumb{width:46px;height:46px;flex:0 0 46px;border-radius:9px;overflow:hidden;background:#F7F5F1}
+.thumb img{width:100%;height:100%;object-fit:cover;object-position:0 50%;display:block}
+.rc-main{flex:1;min-width:0}
+.rc-title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-sub{font-size:12px;color:var(--muted);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.empty{border:1px dashed #E7E1D8;border-radius:14px;padding:26px;text-align:center;color:var(--muted2);font-size:13.5px;background:#FFFCF7}
+.empty b{color:var(--nav)}
+
+/* 页面标题 */
+.page-title{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:18px}
+.page-title h2{font-size:24px;font-weight:800}
+.page-title p{font-size:14px;color:var(--muted2)}
+.page-title p b{color:var(--brand);font-weight:700}
+
+/* 筛选 */
+.filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+.filters select{height:38px;border:1px solid var(--line2);background:var(--surface);border-radius:9px;padding:0 30px 0 12px;font-size:13.5px;color:var(--ink2);
+  appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237B858E' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center}
+.filters select:focus{outline:0;border-color:#E2C7A8}
+.preset{display:inline-flex;align-items:center;gap:7px;background:var(--brand-soft);color:var(--brand);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;margin-bottom:18px}
+.preset button{color:var(--brand);font-size:15px;line-height:1}
+.preset .preset-add{font-size:12px;font-weight:600;background:#fff;border:1px solid #FFDCC4;border-radius:999px;padding:4px 11px;line-height:1.4}
+/* 当前生效筛选条件：常驻可见，永不隐形 */
+.chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:-4px 0 16px}
+.chips>.chips-l{font-size:12.5px;color:var(--muted2)}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--brand-soft);color:var(--brand);border:1px solid #FFDCC4;border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;min-height:30px}
+.chip i{font-style:normal;opacity:.6;font-size:14px;line-height:1}
+.chip:hover{background:#FFE7D6}
+.chip.clear{background:#F7F4EF;color:var(--nav);border-color:var(--line2)}
+.chip.clear:hover{background:#F1EDE7}
+.more-wrap{text-align:center;margin-top:26px}
+.more-wrap button{background:var(--surface);border:1px solid var(--line2);border-radius:10px;padding:11px 34px;font-size:14px;color:var(--nav)}
+.more-wrap button:hover{border-color:#DCD5CB}
+
+/* 功能页 */
+.tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.tool{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+.tool h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
+.tool h3 svg{width:18px;height:18px;stroke:var(--brand);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.tool p{font-size:12.5px;color:var(--muted2);margin:9px 0 14px;line-height:1.65}
+.tool button{background:var(--brand-soft);color:var(--brand);font-weight:600;font-size:13.5px;border-radius:8px;padding:9px 16px;width:100%}
+.tool button.ghost{background:#F7F4EF;color:var(--nav)}
+.kv{display:flex;justify-content:space-between;font-size:13px;color:var(--ink2);padding:7px 0;border-bottom:1px dashed #F0EBE4}
+.kv:last-child{border-bottom:0}
+
+/* ---------- 功能页：入口卡片 ---------- */
+.tool-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 18px}
+.tcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 17px;
+  display:flex;align-items:center;gap:14px;text-align:left;width:100%;transition:box-shadow .15s,transform .15s}
+.tcard:hover{box-shadow:0 3px 12px rgba(160,120,80,.08)}
+.tcard:active{transform:translateY(1px)}
+.tcard .ti{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--brand-soft)}
+.tcard .ti svg{width:21px;height:21px;fill:none;stroke:var(--brand);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.tcard .tx{flex:1;min-width:0}
+.tcard .tt{display:block;font-size:14.5px;font-weight:600;color:var(--ink)}
+.tcard .ts{display:block;font-size:12.5px;color:var(--muted2);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tcard .ta{flex:none;color:#CFC8BE;font-size:15px;line-height:1}
+.only-mobile{display:none !important}
+.tagline{display:flex;flex-wrap:wrap;gap:9px}
+.tagline button{background:var(--chip);color:var(--nav);border-radius:8px;padding:8px 14px;font-size:13px}
+.tagline button:hover{background:var(--brand-soft);color:var(--brand)}
+.tagline button.add{background:var(--surface);border:1px dashed var(--line2);color:var(--muted2);padding:5px 12px;font-size:16px;line-height:1.35}
+.artist-scroll{display:flex;gap:4px;overflow-x:auto;padding:2px 0 12px}
+.artist-scroll::-webkit-scrollbar{height:8px}
+.artist-scroll::-webkit-scrollbar-thumb{background:#DED7CD;border-radius:999px}
+.artist-scroll .artist{flex:0 0 84px}
+.artist-scroll .artist .av{width:50px;height:50px;font-size:20px}
+
+/* ---------- 歌手页「按歌手找」 ----------
+   参考图量测（1149×922）：页底 #FDFBF6、卡片纯白、卡 346×82、圆角≈13、
+   列间距 31 / 行间距 12、头像 46 圆形、头像左内边距 18、头像到文字 15、
+   歌名字号≈16（墨高15）、曲目数≈12.5（墨高12）、右侧 › 箭头。 */
+.ar-top{display:flex;align-items:flex-start;gap:16px;margin-bottom:14px}
+#arSearch{margin-bottom:20px;max-width:560px}
+.ar-empty{grid-column:1/-1}
+.ar-empty .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.ar-back{flex:none;background:var(--surface);border:1px solid var(--line2);border-radius:9px;
+  padding:8px 14px;font-size:13.5px;color:var(--nav);white-space:nowrap;margin-top:4px}
+.ar-back:hover{background:#F8F2EA}
+.ar-htxt{flex:1;min-width:0}
+.ar-htxt h2{font-size:24px;font-weight:800;line-height:1.25;display:flex;align-items:center;gap:11px}
+.ar-htxt p{font-size:14px;color:var(--muted2);margin-top:7px}
+.ar-hav{display:inline-flex;flex:none}
+.ar-hav[hidden]{display:none}
+.ar-hav .av{width:34px;height:34px;font-size:14px}
+.ar-stat{flex:none;font-size:13px;color:var(--muted2);margin-top:12px;white-space:nowrap}
+.ar-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 31px}
+.arow{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+  width:100%;height:82px;padding:0 16px 0 18px;display:flex;align-items:center;gap:15px;
+  cursor:pointer;text-align:left;
+  transition:border-color .15s,box-shadow .15s,transform .15s}
+.arow:hover{border-color:#E3D8C9;box-shadow:0 6px 18px rgba(120,90,55,.10);transform:translateY(-1px)}
+.arow:active{transform:scale(.99)}
+.arow:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.arow .av{width:46px;height:46px;font-size:19px;flex:0 0 46px}
+.arow .artx{flex:1;min-width:0}
+.arow .artx b{display:block;font-size:16px;font-weight:700;color:var(--ink);line-height:1.25;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow .artx i{display:block;font-style:normal;font-size:12.5px;color:var(--muted2);margin-top:5px}
+.arow .argo{flex:none;color:#CFC8BE;font-size:20px;line-height:1}
+@media (max-width:1180px){ .ar-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:720px){ .ar-grid{grid-template-columns:1fr} }
+
+/* ---------- 设置页 ---------- */
+.set-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.nav-bottom{margin-top:auto;padding-top:14px}
+
+/* ---------- 曲库：列表视图 ---------- */
+.lib-list{display:flex;flex-direction:column;gap:10px}
+.lib-row{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;
+  display:flex;align-items:center;gap:14px;cursor:pointer}
+.lib-row:hover{box-shadow:0 3px 12px rgba(160,120,80,.07)}
+.lib-row .thumb{width:50px;height:50px;flex:0 0 50px;border-radius:8px}
+.lib-row .lm{flex:1;min-width:0}
+.lib-row .lt{font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-row .ls{font-size:13px;color:var(--muted);margin-top:5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.lib-row .la{display:flex;align-items:center;gap:8px;flex:none}
+.view-toggle{display:inline-flex;background:var(--surface);border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.view-toggle button{padding:8px 11px;color:var(--muted2);line-height:0}
+.view-toggle button.on{background:var(--brand-soft);color:var(--brand)}
+.view-toggle svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.kv b{font-weight:600}
+
+/* 练习记录 */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:22px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+.stat .n{font-size:30px;font-weight:800;color:var(--brand);line-height:1.1}
+.stat .l{font-size:12.5px;color:var(--muted2);margin-top:8px}
+.heat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:22px;overflow-x:auto}
+.heat h3{font-size:14px;font-weight:700;margin-bottom:14px}
+.logrow{display:flex;align-items:center;gap:14px;padding:13px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+.logdate{flex:0 0 92px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.logmain{flex:1;min-width:0}
+.logmain b{font-size:14.5px;font-weight:600}
+.logmain span{display:block;font-size:12px;color:var(--muted2);margin-top:4px}
+.logrow .lnk{font-size:12.5px;color:var(--brand);cursor:pointer;flex:0 0 auto}
+
+/* 标签页 */
+.tagbox{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.tagbox h3{font-size:14px;font-weight:700;margin-bottom:13px;display:flex;gap:8px;align-items:baseline}
+.tagbox h3 span{font-size:12px;color:var(--muted2);font-weight:400}
+.tagcloud{display:flex;flex-wrap:wrap;gap:9px}
+.tagcloud button{background:var(--chip);color:var(--nav);border-radius:8px;padding:8px 14px;font-size:13px;display:inline-flex;gap:8px;align-items:center}
+.tagcloud button:hover{background:var(--brand-soft);color:var(--brand)}
+.tagcloud button i{font-style:normal;font-size:11.5px;opacity:.75}
+
+/* 悬浮铃铛 */
+.fab{position:fixed;right:calc(50% - 724px + 24px);bottom:34px;width:52px;height:52px;border-radius:50%;background:#fff;
+  box-shadow:0 4px 18px rgba(140,105,70,.18);display:grid;place-items:center;z-index:40}
+.fab svg{width:23px;height:23px;stroke:#1D86FF;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.fab i{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;border-radius:999px;background:#F5222D;color:#fff;
+  font-size:11.5px;font-style:normal;font-weight:700;display:grid;place-items:center;padding:0 5px;border:2px solid #fff}
+
+/* 详情页 */
+.detail{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;padding:8px;overflow:hidden}
+.detail[hidden]{display:none}
+.dt-shell{flex:1;min-width:0;background:var(--panel);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;
+  margin:0 auto;box-shadow:0 2px 14px rgba(150,115,80,.08)}
+.dt-bar{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.dt-back{display:flex;align-items:center;gap:7px;font-size:15px;color:var(--nav);background:#F7F4EF;border-radius:9px;padding:9px 15px;white-space:nowrap;flex:0 0 auto}
+.dt-back:hover{color:var(--brand)}
+.dt-name{flex:0 1 auto;min-width:0;max-width:300px}
+.dt-name b{display:block;font-size:21px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dt-name span{display:block;font-size:13.5px;color:var(--muted2);margin-top:4px}
+.dt-cover{width:46px;height:46px;border-radius:10px;object-fit:cover;flex:none;background:#F2EEE8;
+  box-shadow:0 1px 4px rgba(120,90,60,.14)}
+.dt-cover-btn{position:relative;flex:none;border-radius:10px;padding:0;background:none;line-height:0;cursor:pointer;overflow:hidden}
+.dt-cover{width:40px;height:40px;border-radius:10px;object-fit:cover;display:block;background:#F2EEE8}
+.av-img{object-fit:cover;background:#EDE8E0}
+.av-pick{cursor:pointer;border:0;padding:0;background:none;line-height:0}
+.dt-cover-btn::after{content:'换封面';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:10px;line-height:1.1;color:#fff;background:rgba(0,0,0,.55);opacity:0;transition:opacity .15s}
+.dt-cover-btn:hover::after{opacity:1}
+.dt-subwrap{display:flex;align-items:center;gap:7px;margin-top:5px}
+.dt-subwrap .av{width:19px;height:19px;font-size:8.5px;display:inline-flex}
+.dt-subwrap span{display:block;font-size:12.5px;color:var(--muted2);margin:0}
+.dt-tools{display:flex;gap:9px;align-items:center;flex:0 0 auto;order:2}
+.dt-nav{background:var(--surface);border:1px solid var(--line2);border-radius:8px;padding:8px 14px;font-size:14px;color:var(--nav);white-space:nowrap}
+.dt-nav:hover{border-color:#DCD5CB}
+.dt-fav{background:#F7F4EF;border-radius:9px;padding:9px 15px;font-size:15px;color:var(--nav);display:flex;gap:7px;align-items:center}
+.dt-fav svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.dt-fav.on{background:var(--brand-soft);color:var(--brand)}
+.dt-fav.on svg{fill:var(--brand)}
+/* 「我学会了」：学会就移出「新学」，所以给一个和主操作区分开的绿色系次级按钮 */
+.dt-known{background:#EEF4EA;border:1px solid #D3E2C9;border-radius:9px;padding:8px 14px;
+  font-size:15px;color:#31663F;display:flex;gap:7px;align-items:center;white-space:nowrap}
+.dt-known svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.dt-known:hover{border-color:#BFD6B2;background:#E8F1E3}
+.dt-known.on{background:#DFEDD6;border-color:#B4D0A5;color:#245534}
+.dt-known.on svg{stroke-width:2.6}
+.mchip{background:var(--chip);border-radius:8px;padding:7px 12px;font-size:12.5px;color:var(--nav)}
+.mchip b{font-weight:600;color:var(--ink);margin-left:5px}
+.dt-zoom{display:flex;align-items:center;gap:7px;padding:0;flex:1 1 auto;justify-content:center;min-width:0;flex-wrap:nowrap;order:1}
+.dt-zoom button{background:var(--surface);border:1px solid var(--line2);border-radius:8px;padding:8px 14px;font-size:14px;color:var(--nav)}
+.dt-zoom button:hover{border-color:#DCD5CB}
+.dt-zoom button.act{background:var(--brand-soft);border-color:#FFDCC4;color:var(--brand);font-weight:600}
+.dt-zoom .zval{font-size:14px;color:var(--muted2);min-width:58px;text-align:center;font-variant-numeric:tabular-nums;
+  border-radius:7px;padding:7px 5px;cursor:pointer;transition:background .15s,color .15s}
+.dt-zoom .zval:hover{background:#F7F4EF;color:var(--brand)}
+.dt-zoom .grow{flex:1}
+/* 缩放滑块：可直接左右拖动，轨道填在缩放条中间的空白里（越长越容易精确微调） */
+.dt-zoom .zslider{-webkit-appearance:none;appearance:none;flex:1 1 130px;min-width:92px;max-width:300px;
+  height:22px;margin:0 4px;background:transparent;cursor:pointer}
+.dt-zoom .zslider:focus{outline:none}
+.dt-zoom .zslider::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--line2)}
+.dt-zoom .zslider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+  width:15px;height:15px;margin-top:-5.5px;border-radius:50%;background:var(--brand);
+  border:2.5px solid #fff;box-shadow:0 1px 4px rgba(160,120,80,.34)}
+.dt-zoom .zslider:hover::-webkit-slider-thumb{background:#E2551A}
+.dt-zoom .zslider:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(255,100,34,.22)}
+.dt-zoom .zslider::-moz-range-track{height:4px;border-radius:2px;background:var(--line2)}
+.dt-zoom .zslider::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--brand);
+  border:2.5px solid #fff;box-shadow:0 1px 4px rgba(160,120,80,.34)}
+.dt-canvas{flex:1;overflow:auto;background:#F7F4EF;margin:0 8px 8px;border-radius:12px;padding:6px;cursor:grab}
+.dt-canvas.grabbing{cursor:grabbing}
+.dt-canvas img{display:block;margin:0 auto;background:#fff;border-radius:6px;box-shadow:0 2px 12px rgba(120,90,60,.12);transform-origin:top center}
+
+/* 搜索联想下拉：输入即动态显示相关歌手 / 曲目 */
+.sugbox{position:fixed;z-index:65;background:#fff;border:1px solid var(--line2);border-radius:12px;padding:6px;
+  box-shadow:0 12px 34px rgba(120,90,60,.18);max-height:62vh;overflow:auto}
+.sugbox[hidden]{display:none}
+.sugbox .sg-h{font-size:11.5px;color:var(--muted2);padding:7px 11px 4px;font-weight:600}
+.sugbox .sg-i{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;cursor:pointer}
+.sugbox .sg-i:hover,.sugbox .sg-i.on{background:var(--brand-soft)}
+.sugbox .sg-i .sg-t{flex:1;min-width:0;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sugbox .sg-i .sg-n{font-size:12px;color:var(--muted2);flex:0 0 auto;max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sugbox .sg-i.on .sg-t,.sugbox .sg-i.on .sg-n{color:var(--brand)}
+.sugbox .sg-empty{padding:14px 12px;font-size:13px;color:var(--muted2);text-align:center}
+
+/* 从曲库添加曲谱到「新学」 */
+.pick{position:fixed;inset:0;background:rgba(31,35,40,.42);z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}
+.pick[hidden]{display:none}
+.pk-shell{background:var(--panel);border-radius:16px;width:min(560px,100%);max-height:84vh;display:flex;flex-direction:column;
+  padding:18px 20px;box-shadow:0 18px 50px rgba(120,90,60,.24)}
+.pk-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.pk-head h3{font-size:16.5px;font-weight:700}
+.pk-head p{font-size:12.5px;color:var(--muted2);margin-top:5px}
+.pk-x{width:32px;height:32px;border-radius:9px;background:#F7F4EF;color:var(--nav);font-size:18px;line-height:1;flex:none}
+.pk-x:hover{color:var(--brand)}
+.pk-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;margin:2px 0 12px;min-height:120px}
+.pk-row{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;border:1px solid var(--line2);cursor:pointer;background:var(--surface);text-align:left}
+.pk-row:hover{border-color:#DCD5CB}
+.pk-row .box{width:20px;height:20px;border-radius:6px;border:1.6px solid #CFC7BB;flex:none;display:grid;place-items:center}
+.pk-row .box svg{display:none;width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
+.pk-row.on{border-color:var(--brand);background:var(--brand-soft)}
+.pk-row.on .box{background:var(--brand);border-color:var(--brand)}
+.pk-row.on .box svg{display:block}
+.pk-row.done{opacity:.55;cursor:default}
+.pk-row.done .box{border-style:dashed}
+.pk-row .pt{flex:1;min-width:0}
+.pk-row .pt b{display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-row .pt span{font-size:12px;color:var(--muted2)}
+.pk-foot{display:flex;align-items:center;gap:10px}
+.pk-foot .pk-sel{flex:1;font-size:13px;color:var(--muted2)}
+.pk-foot .btn-solid:disabled{opacity:.5;cursor:default}
+
+/* 菜单 */
+.menu{position:fixed;z-index:70;background:#fff;border:1px solid var(--line2);border-radius:11px;padding:6px;min-width:158px;
+  box-shadow:0 10px 30px rgba(120,90,60,.16)}
+.menu button{display:block;width:100%;text-align:left;padding:10px 13px;border-radius:8px;font-size:13.5px;color:var(--ink2)}
+.menu button:hover{background:#FAF6F1;color:var(--brand)}
+
+/* 提示 */
+#toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%) translateY(20px);background:rgba(31,35,40,.92);color:#fff;
+  border-radius:10px;padding:12px 20px;font-size:13.5px;opacity:0;pointer-events:none;transition:all .22s;z-index:99;max-width:80vw}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+input[type=file]{display:none}
+
+/* 滚动条 */
+.dt-canvas::-webkit-scrollbar{width:10px;height:10px}
+.dt-canvas::-webkit-scrollbar-thumb{background:#DED7CD;border-radius:999px;border:3px solid #F7F4EF}
+.heat::-webkit-scrollbar{height:8px}
+.heat::-webkit-scrollbar-thumb{background:#DED7CD;border-radius:999px}
+
+/* ---------- 移动端 ---------- */
+/* ================= 新版首页组件（对齐参考图） ================= */
+/* 主栏曲目行 */
+.rlist{display:flex;flex-direction:column;gap:12px}
+.rcard{display:flex;align-items:center;gap:16px;background:var(--surface);border-radius:16px;padding:16px 20px;
+  box-shadow:0 2px 10px rgba(150,115,80,.055)}
+.rcard .cover{width:64px;height:64px;border-radius:12px;object-fit:cover;flex:0 0 64px;background:#F3EFE9;cursor:pointer}
+.rcard .info{flex:1;min-width:0;cursor:pointer}
+.rcard .info b{display:block;font-size:17px;font-weight:700;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rcard .info .sub{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:12.5px;color:var(--muted2);flex-wrap:wrap}
+.rcard .info .sub .av{width:18px;height:18px;font-size:8px}
+.rcard .info .sub .mini{background:#F5F2EE;border-radius:4px;padding:3px 7px;font-size:10.5px;color:#7E7E7E}
+.rcard .info .sub .st{color:#B3ACA3}
+.rcard .acts{display:flex;align-items:center;gap:10px;flex:none}
+.gbtn{height:40px;border-radius:12px;padding:0 18px;font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;
+  gap:6px;white-space:nowrap;border:0}
+.gbtn.solid{background:var(--brand);color:#fff}
+.gbtn.solid:hover{background:#FF6F26}
+.gbtn.line{background:var(--surface);color:var(--brand);border:1px solid #FFD9C2}
+.gbtn.line:hover{background:#FFF6F0}
+.gbtn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.gbtn .tri{fill:currentColor;stroke:none;width:12px;height:12px;margin-left:-2px}
+.mbtn{width:40px;height:40px;border-radius:50%;background:var(--surface);border:1px solid #F0EAE2;display:grid;
+  place-items:center;color:#BCB5AC;font-size:15px;letter-spacing:1px;flex:0 0 40px;line-height:1}
+.mbtn:hover{border-color:#E2D9CD;color:var(--nav)}
+.hbtn{width:34px;height:34px;display:grid;place-items:center;color:#CFC8C0;background:none;border:0;flex:0 0 34px}
+.hbtn:hover{color:var(--brand)}
+.hbtn.on{color:var(--brand)}
+.hbtn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9}
+.hbtn.on svg{fill:var(--brand)}
+
+/* 右栏卡片 */
+.rcard2{background:var(--surface);border-radius:18px;padding:20px;box-shadow:0 2px 10px rgba(150,115,80,.055)}
+.rtitle{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rtitle b{font-size:20px;font-weight:700;color:var(--ink)}
+.rtitle span{font-size:13px;color:var(--muted2);cursor:pointer;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.rtitle span:hover{color:var(--brand)}
+.rtitle span svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.rtop{display:flex;align-items:center;gap:14px;margin-top:22px}
+.ring{width:140px;height:140px;flex:0 0 140px;position:relative}
+.ring svg{width:140px;height:140px;display:block}
+.ring circle{fill:none;stroke-linecap:round}
+.ring .rbg{stroke:#F3EDE6;stroke-width:9}
+.ring .rfg{stroke:var(--brand);stroke-width:9;transition:stroke-dashoffset .45s ease}
+.ring .rv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .rv b{font-size:31px;font-weight:800;color:var(--ink);line-height:1}
+.ring .rv b s{text-decoration:none;font-weight:400;color:#C8C2BA;margin:0 1px}
+.ring .rv i{margin-top:6px;font-size:12.5px;color:var(--muted2);font-style:normal}
+.rstats{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+.rstat{display:flex;align-items:center;gap:10px}
+.rstat .si{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 34px}
+.rstat .si svg{width:17px;height:17px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rstat .sv{min-width:0}
+.rstat .sv em{display:block;font-size:12.5px;color:var(--muted2);font-style:normal}
+.rstat .sv b{display:block;font-size:16px;font-weight:700;color:var(--ink);margin-top:4px;white-space:nowrap}
+.ctabar{width:100%;height:50px;border-radius:16px;background:var(--brand);color:#fff;font-size:15px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;gap:8px;margin-top:28px;border:0;
+  box-shadow:0 4px 12px rgba(255,130,52,.28)}
+.ctabar:hover{background:#FF6F26}
+.ctabar svg{width:13px;height:13px;fill:currentColor}
+
+/* 练习日历 */
+.cal{margin-top:14px}
+.cal .wk{display:grid;grid-template-columns:repeat(7,1fr)}
+.cal .wk span{text-align:center;font-size:12px;color:var(--muted2);padding:5px 0}
+.cal .gd{display:grid;grid-template-columns:repeat(7,1fr);margin-top:2px}
+.cal .gd>span{height:44px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#3A3A3A}
+.cal .gd b{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:400}
+.cal .gd .out b{color:#D3CCC3}
+.cal .gd .done b{color:var(--brand);font-weight:600}
+.cal .gd .today b{background:var(--brand);color:#fff;font-weight:700;box-shadow:0 3px 8px rgba(255,130,52,.32)}
+.cal .lg{display:flex;align-items:center;gap:18px;margin-top:12px;font-size:11px;color:var(--muted2)}
+.cal .lg i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px}
+
+/* 右栏底部照片卡 */
+.mood{height:214px;border-radius:18px;background:#6B4A2E url('assets/ui/mood.jpg') center/cover no-repeat;
+  position:relative;overflow:hidden;padding:20px;display:flex;flex-direction:column;justify-content:center}
+.mood::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(46,30,14,.62),rgba(46,30,14,.16))}
+.mood p{position:relative;z-index:1;font-size:19px;font-weight:700;color:#fff;line-height:1.6}
+.mood i{position:relative;z-index:1;margin-top:16px;width:34px;height:2px;background:rgba(255,255,255,.85);display:block}
+
+/* 下载页 */
+.dlbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.dlbar .n{font-size:12.5px;color:var(--muted2)}
+.dlnote{font-size:12px;color:var(--muted2);background:#FFF8F0;border:1px solid #F3E7D8;border-radius:10px;
+  padding:10px 14px;margin-bottom:14px;line-height:1.7}
+.dlrow{display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:12px;padding:11px 16px;margin-bottom:9px}
+.dlrow .box{width:19px;height:19px;border-radius:5px;border:1.5px solid #DCD5CB;flex:0 0 19px;display:grid;place-items:center;cursor:pointer}
+.dlrow .box.on{background:var(--brand);border-color:var(--brand)}
+.dlrow .box.on::after{content:"";width:9px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;
+  transform:rotate(-45deg) translate(1px,-1px)}
+.dlrow img{width:38px;height:38px;border-radius:8px;object-fit:cover;flex:0 0 38px;background:#F3EFE9}
+.dlrow b{font-size:13.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dlrow span{font-size:11.5px;color:var(--muted2);flex:none}
+
+@media (max-width:1480px){ .fab{right:26px} }
+/* 窗口变窄：只做「等比缩小」，不改变三栏比例、不把四张速览卡改成两列 */
+@media (max-width:1440px){
+  .grid3,.tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .artist-grid{grid-template-columns:repeat(auto-fill,minmax(80px,1fr))}
+  .artist .av{width:46px;height:46px;font-size:19px}
+  .rcard{gap:13px;padding:15px 17px}
+  .rcard .cover{width:58px;height:58px;flex-basis:58px}
+  .gbtn{padding:0 15px;font-size:13px}
+  .rtop{gap:10px}
+  .ring,.ring svg{width:clamp(108px,7vw,140px);height:clamp(108px,7vw,140px);flex-basis:clamp(108px,7vw,140px)}
+  .rcard2{padding:clamp(14px,1.2vw,20px)}
+}
+/* 主栏再窄，右上的日期/引用会压到搜索条 —— 先收起来（参考图那一块是纯装饰） */
+@media (max-width:1300px){ .hero-side{display:none} }
+/* 再窄就放不下第三栏：右栏整体移到主栏下方，主栏拿回完整宽度 */
+@media (max-width:1180px){
+  .main{grid-template-columns:minmax(0,1fr)}
+  .main .rail{width:auto;padding:0 clamp(16px,2vw,24px) 30px;flex-direction:row;flex-wrap:wrap;gap:16px}
+  .main .rail>*{flex:1 1 300px}
+  .main .mood{flex:1 1 100%}
+  .quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:900px){
+  .main .rail{padding:0 22px 30px}
+  .main .rail>*{flex:1 1 280px}
+}
+@media (max-width:768px){
+  body{padding:0;font-size:15px;background:var(--panel)}
+  .app{max-width:none;border-radius:0;min-height:100vh;display:block;box-shadow:none}
+  .sidebar{width:auto;flex:none;position:fixed;left:0;right:0;bottom:0;top:auto;z-index:50;overflow:hidden;
+    height:auto;align-self:stretch;
+    border-right:0;border-top:1px solid var(--line);background:var(--panel);padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+    flex-direction:row;gap:0}
+  .brand,.install{display:none}
+  .nav{flex-direction:row;gap:0;width:100%}
+  .nav button{flex:1 1 0;width:auto;min-width:0;height:auto;padding:8px 2px;flex-direction:column;gap:4px;font-size:10.5px;border-radius:10px;justify-content:center;text-align:center}
+  .nav button svg{width:21px;height:21px;flex:none}
+  .main{padding:0;display:block}
+  .main-col{padding:14px 16px calc(96px + env(safe-area-inset-bottom))}
+  .main .rail{padding:0 16px calc(96px + env(safe-area-inset-bottom))}
+  .side-foot{display:none}
+  .hero{height:190px;border-radius:18px}
+  .hero-text{left:20px;top:30px}
+  .hero-text h1{font-size:27px}
+  .hero-text p{font-size:15px;margin-top:8px}
+  .hero-search{left:20px;right:20px;bottom:22px;width:auto;height:48px;padding:0 16px}
+  .hero-search input{font-size:16px}
+  .hero-side{display:none}
+  .quick-grid{gap:12px}
+  .quick{height:150px}
+  .quick .qi{left:18px;top:16px;width:48px;height:46px;border-radius:15px}
+  .quick .qi svg{width:24px;height:24px}
+  .quick .qt{left:18px;top:78px;font-size:17.5px}
+  .quick .qs{left:19px;top:106px;font-size:13px;max-width:calc(100% - 74px)}
+  .quick .qgo{right:11px;top:92px;width:38px;height:38px}
+  .rcard{flex-wrap:wrap}
+  .rcard .acts{width:100%;justify-content:flex-end}
+  .rcard .cover{width:52px;height:52px;flex-basis:52px}
+  .rtop{flex-direction:column;align-items:stretch}
+  .rstats{flex-direction:row;flex-wrap:wrap;gap:10px}
+  .rstat{flex:1 1 44%}
+  .gbtn,.mbtn{height:38px}
+  .mbtn{width:38px;flex-basis:38px}
+  .gbtn{padding:0 13px;font-size:12.5px}
+  .search{height:46px;font-size:15px;margin-bottom:16px}
+  .search input{font-size:16px}
+  .quick-grid{gap:12px}
+  .quick{height:132px}
+  .quick .qi{width:40px;height:38px;border-radius:13px;top:13px;left:14px}
+  .quick .qi svg{width:21px;height:21px}
+  .quick .qt{font-size:15.5px;top:68px;left:14px}
+  .quick .qs{font-size:11.5px;top:92px;left:15px;max-width:calc(100% - 60px)}
+  .grid2,.tool-grid,.tool-list,.set-grid{grid-template-columns:1fr}
+  .grid3{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+  .only-mobile{display:flex !important}
+  .lib-row{padding:9px 12px;gap:11px}
+  .lib-row .thumb{width:44px;height:44px;flex:0 0 44px}
+  /* 窄屏空间紧张：三个状态图标收进「···」菜单，保证曲名有足够宽度 */
+  .la{gap:6px}
+  .ic-btn{display:none}
+  .sp button{padding:9px 10px;font-size:13px;min-height:40px}
+  .card{padding:9px;border-radius:12px}
+  .card-img{border-radius:9px}
+  .card-img::after{border-radius:9px}
+  .card-title{font-size:13.5px;margin-top:9px}
+  .card-artist{font-size:11.5px;margin-top:5px}
+  .card-artist .av{width:19px;height:19px;font-size:9px}
+  .card-tags{margin-top:8px;gap:5px}
+  .tag{font-size:10px;padding:3px 6px}
+  .card-actions{gap:7px;margin-top:9px}
+  .stats{grid-template-columns:1fr;gap:12px}
+  .sec-head{flex-direction:column;align-items:flex-start;gap:10px}
+  .sec-head .right{padding-bottom:0}
+  .card-actions .btn-more,.sp button{min-height:42px}
+  .fab{right:18px;bottom:calc(84px + env(safe-area-inset-bottom))}
+  .detail{padding:0}
+  .dt-shell{border-radius:0;max-width:none}
+  .dt-bar{padding:10px 12px;gap:9px}
+  .dt-name b{font-size:17px}
+  .dt-zoom{order:3;flex:1 1 100%;justify-content:flex-start}
+  .dt-tools{width:100%;justify-content:space-between;order:2}
+  .dt-zoom .zslider{flex:1 1 110px;min-width:80px;max-width:none;height:26px}
+  .dt-zoom .zslider::-webkit-slider-thumb{width:22px;height:22px;margin-top:-9px}
+  .dt-zoom .zslider::-moz-range-thumb{width:22px;height:22px}
+  .dt-canvas{margin:0 14px 14px;padding:10px}
+  .sugbox .sg-i{min-height:44px}
+  .pick{padding:0;align-items:flex-end}
+  .pk-shell{width:100%;max-height:90vh;border-radius:16px 16px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  .pk-row{min-height:52px}
+  .filters select{height:44px;font-size:16px}
+  .btn-soft,.btn-line,.btn-solid,.tool button{min-height:44px}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ============ 侧栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></span>
+      <span><b>音乐时光</b><i>让练习成为一种享受</i></span>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="on" data-view="home"><svg viewBox="0 0 24 24"><path d="M12 3.2c2.6 3.3 5.6 5.7 5.6 9.5a5.6 5.6 0 1 1-11.2 0c0-2.4 1.5-4.1 3-5.7.4 1.3 1.1 2.1 2 2.5-.3-2.4.1-4.2.6-6.3z"/></svg>发现</button>
+      <button data-view="log"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12.2l2.8 2.8 5.6-5.6"/></svg>我的练习</button>
+      <button data-view="lib"><svg viewBox="0 0 24 24"><path d="M4 6.5h11M4 12h11M4 17.5h7"/><circle cx="18" cy="16" r="3"/><path d="M21 16V7l-3 .8"/></svg>歌单</button>
+      <button data-view="artists"><svg viewBox="0 0 24 24"><rect x="9.2" y="3" width="5.6" height="10.4" rx="2.8"/><path d="M5.6 11.6a6.4 6.4 0 0 0 12.8 0"/><path d="M12 18.2v2.8"/></svg>歌手</button>
+      <button data-view="fav"><svg viewBox="0 0 24 24"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1l1.7 1.7L12 21.5l7.1-7.1 1.7-1.7a5 5 0 0 0 0-7.1z"/></svg>收藏</button>
+      <button data-view="learning"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/></svg>新学</button>
+      <button data-view="download"><svg viewBox="0 0 24 24"><path d="M12 3.6v11.2"/><path d="M7.6 10.6 12 15l4.4-4.4"/><path d="M4.5 17.5v1.4a1.6 1.6 0 0 0 1.6 1.6h11.8a1.6 1.6 0 0 0 1.6-1.6v-1.4"/></svg>下载</button>
+      <button data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.1 14.6a1.7 1.7 0 0 0 .35 1.88l.06.06a2 2 0 1 1-2.84 2.83l-.06-.06a1.7 1.7 0 0 0-2.88 1.2v.17a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.88.35l-.06.06a2 2 0 1 1-2.83-2.84l.06-.06a1.7 1.7 0 0 0 .35-1.88l-.06-.06A1.7 1.7 0 0 0 4.97 4.6l.06.06a1.7 1.7 0 0 0 1.88.35h.08A1.7 1.7 0 0 0 9.6 3.46V3.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 2.88 1.2l.06-.06a2 2 0 1 1 2.83 2.84l-.06.06a1.7 1.7 0 0 0-.35 1.88v.08a1.7 1.7 0 0 0 1.55 1.11h.17a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1.11z"/></svg>设置</button>
+    </nav>
+    <div class="side-foot">
+      <div class="side-photo" aria-hidden="true"></div>
+      <div class="side-quote">"音乐<br>让平凡的日子<br>闪闪发光"</div>
+      <div class="mp-card" id="mpCard" role="button" tabindex="0" aria-label="随机播放一首，发现新歌">
+        <div class="mp-cover">
+          <img id="mpCover" src="assets/ui/vinyl.jpg" alt="">
+        </div>
+        <div class="mp-foot">
+          <div class="mp-txt"><b>随机一首</b><span>发现新歌</span></div>
+          <span class="mp-go" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ 主区 ============ -->
+  <main class="main" id="main">
+    <div class="main-col">
+    <!-- 首页 -->
+    <section class="view on" id="v-home">
+      <div class="hero">
+        <div class="hero-text">
+          <h1 id="greet">下午好 👋</h1>
+          <p>今天也用音乐，治愈你的日常</p>
+        </div>
+        <div class="hero-search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+          <input id="q-home" type="search" placeholder="搜索歌曲 / 歌手 / 专辑 ..." autocomplete="off">
+          <svg class="hfilter" id="heroFilter" viewBox="0 0 24 24" title="到歌单里筛选"><path d="M4 6.5h16M7 12h10M10 17.5h4"/></svg>
+        </div>
+        <div class="hero-side">
+          <div class="hd"><span id="heroDate">10 / 02</span><span id="heroWeek">周四</span></div>
+          <div class="hq" id="heroQuote">"音乐是生活的另一种表达。"</div>
+        </div>
+      </div>
+      <div class="quick-grid">
+        <button class="quick" data-act="random" style="background-image:url('assets/ui/card0.jpg')">
+          <span class="qi"><svg viewBox="0 0 24 24" style="stroke:#EE5A30"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="m3 4 5.5 5.5"/></svg></span>
+          <span class="qt">随机一首</span><span class="qs">发现新歌，遇见惊喜</span>
+          <span class="qgo"><svg viewBox="0 0 24 24" style="stroke:#E25A38"><path d="M9 5l7 7-7 7"/></svg></span>
+        </button>
+        <button class="quick" data-act="stale" style="background-image:url('assets/ui/card1.jpg')">
+          <span class="qi"><svg viewBox="0 0 24 24" style="stroke:#1B7CD8"><circle cx="12" cy="13.4" r="7.6"/><path d="M12 9.8V13l2.4 1.5"/><path d="M4.8 3.4 2.6 5.6M19.2 3.4l2.2 2.2"/></svg></span>
+          <span class="qt">很久没弹</span><span class="qs">超过 30 天</span>
+          <span class="qgo"><svg viewBox="0 0 24 24" style="stroke:#3A7FC6"><path d="M9 5l7 7-7 7"/></svg></span>
+        </button>
+        <button class="quick" data-act="known" style="background-image:url('assets/ui/card2.jpg')">
+          <span class="qi"><svg viewBox="0 0 24 24"><path fill="#F7621E" stroke="#F7621E" stroke-width="1" stroke-linejoin="round" d="M12 2.5C15.6 6.4 18.5 9.2 18.5 13.4A6.5 6.5 0 0 1 5.5 13.4C5.5 10.9 7.1 9.1 8.6 7.3C9 8.8 9.9 9.7 11 10.1C10.4 7.3 11.1 4.6 12 2.5Z"/><path fill="#fff" stroke="none" d="M12 12.6C13.4 14.1 14.3 15.1 14.3 16.4A2.4 2.4 0 0 1 9.5 16.4C9.5 15.6 10 14.9 10.6 14.2C10.8 14.8 11.1 15.1 11.5 15.2C11.3 14.3 11.6 13.4 12 12.6Z"/></svg></span>
+          <span class="qt">拿手歌</span><span class="qs">"很熟"后自动归入</span>
+          <span class="qgo"><svg viewBox="0 0 24 24" style="stroke:#E2642F"><path d="M9 5l7 7-7 7"/></svg></span>
+        </button>
+        <button class="quick" data-act="learning" style="background-image:url('assets/ui/card3.jpg')">
+          <span class="qi"><svg viewBox="0 0 24 24" style="stroke:#1B7058"><path d="M12 7.2C10.4 5.9 8.4 5.2 6 5.2H3.2V16.8H6C8.4 16.8 10.4 17.5 12 18.8"/><path d="M12 7.2C13.6 5.9 15.6 5.2 18 5.2H20.8V16.8H18C15.6 16.8 13.6 17.5 12 18.8"/></svg></span>
+          <span class="qt">新学</span><span class="qs">新加的谱子都在这</span>
+          <span class="qgo"><svg viewBox="0 0 24 24" style="stroke:#2A7460"><path d="M9 5l7 7-7 7"/></svg></span>
+        </button>
+      </div>
+
+      <div class="sec-head">
+        <div><h2>新学</h2><p>新加进曲库的谱子自动归入这里，学会后点「我学会了」就移出</p></div>
+        <div class="right">
+          <button class="hlink" id="lnk-learn-all">› 查看全部</button>
+          <button class="hlink add" id="btn-add-learning"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>添加曲谱</button>
+        </div>
+      </div>
+      <div class="rlist" id="home-learning"></div>
+
+      <div class="sec-head">
+        <div><h2>今天建议复习</h2><p id="review-hint">每日一组，明天自动更换；练完一首回来还在</p></div>
+        <div class="right">
+          <button class="hlink" id="btn-reshuffle"><svg viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="m3 4 5.5 5.5"/></svg>随机换一组</button>
+        </div>
+      </div>
+      <div class="rlist" id="home-review"></div>
+    </section>
+    <!-- 功能 -->
+    <section class="view" id="v-tools">
+      <div class="page-title"><h2>功能</h2></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <input id="q-tools" type="search" placeholder="搜索歌曲 / 歌手" autocomplete="off">
+      </div>
+      <div class="tool-list" id="tool-list">
+        <button class="tcard" data-act="by-artist">
+          <span class="ti"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c0-3.6 3.4-5.6 7.5-5.6s7.5 2 7.5 5.6"/></svg></span>
+          <span class="tx"><span class="tt">按歌手找</span><span class="ts">先选择歌手，再查看对应曲目</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="by-genre">
+          <span class="ti"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></span>
+          <span class="tx"><span class="tt">按曲风找</span><span class="ts">流行、民谣、摇滚等</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="by-type">
+          <span class="ti"><svg viewBox="0 0 24 24"><path d="M12 3.2c4.5 0 7.6 3.1 7.6 7.2 0 4.7-3.4 9.6-7.6 9.6S4.4 15.1 4.4 10.4c0-4.1 3.1-7.2 7.6-7.2z"/><path d="M12 8.4v5.2"/></svg></span>
+          <span class="tx"><span class="tt">按类型找</span><span class="ts">弹唱、指弹、Solo、练习曲</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="by-status">
+          <span class="ti"><svg viewBox="0 0 24 24"><path d="M5.5 20V10.5"/><path d="M12 20V4.5"/><path d="M18.5 20v-6.5"/></svg></span>
+          <span class="tx"><span class="tt">按状态找</span><span class="ts">拿手、新学、已学会</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="smart">
+          <span class="ti"><svg viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg></span>
+          <span class="tx"><span class="tt">智能练习</span><span class="ts">依据本机练习记录生成</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="stale">
+          <span class="ti"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2v5l3.3 2"/></svg></span>
+          <span class="tx"><span class="tt">长期未练</span><span class="ts">从未练习或超过 30 天</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="random">
+          <span class="ti"><svg viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="m3 4 5.5 5.5"/></svg></span>
+          <span class="tx"><span class="tt">随机复习</span><span class="ts">随机生成本次练习队列</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="known">
+          <span class="ti"><svg viewBox="0 0 24 24"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1l1.7 1.7L12 21.5l7.1-7.1 1.7-1.7a5 5 0 0 0 0-7.1z"/></svg></span>
+          <span class="tx"><span class="tt">拿手歌曲</span><span class="ts">练习反馈为“很熟”的曲目</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard" data-act="learning">
+          <span class="ti"><svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2.4"/><path d="M8.5 9h7M8.5 13h7M8.5 17h4"/></svg></span>
+          <span class="tx"><span class="tt">新歌练习</span><span class="ts">只练「新学」里的曲目</span></span>
+          <span class="ta">›</span>
+        </button>
+        <button class="tcard only-mobile" data-act="settings">
+          <span class="ti"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.1 14.6a1.7 1.7 0 0 0 .35 1.88l.06.06a2 2 0 1 1-2.84 2.83l-.06-.06a1.7 1.7 0 0 0-2.88 1.2v.17a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.88.35l-.06.06a2 2 0 1 1-2.83-2.84l.06-.06a1.7 1.7 0 0 0 .35-1.88 1.7 1.7 0 0 0-1.55-1.11H2.4a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.35-1.88l-.06-.06A2 2 0 1 1 6.47 4.6l.06.06a1.7 1.7 0 0 0 1.88.35h.08A1.7 1.7 0 0 0 9.6 3.46V3.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 2.88 1.2l.06-.06a2 2 0 1 1 2.83 2.84l-.06.06a1.7 1.7 0 0 0-.35 1.88v.08a1.7 1.7 0 0 0 1.55 1.11h.17a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1.11z"/></svg></span>
+          <span class="tx"><span class="tt">设置</span><span class="ts">备份、数据概况、封面与头像</span></span>
+          <span class="ta">›</span>
+        </button>
+      </div>
+
+      <div class="sec-head"><div><h2>我的标签</h2></div></div>
+      <div class="tagline" id="tool-tags"></div>
+
+      <div class="sec-head">
+        <div><h2>常用歌手</h2></div>
+        <div class="right"><span class="link" id="lnk-all-artists">全部歌手 ›</span></div>
+      </div>
+      <div class="artist-scroll" id="tool-artists"></div>
+    </section>
+
+    <!-- 设置 -->
+    <section class="view" id="v-settings">
+      <div class="page-title"><h2>设置</h2><p>全部数据存在本机浏览器，建议定期导出备份</p></div>
+      <div class="dlbar">
+        <button class="gbtn line" id="installBtn"><svg viewBox="0 0 24 24"><path d="M12 3.6v11.2"/><path d="M7.6 10.6 12 15l4.4-4.4"/><path d="M4.5 17.5v1.4a1.6 1.6 0 0 0 1.6 1.6h11.8a1.6 1.6 0 0 0 1.6-1.6v-1.4"/></svg>安装到电脑 / 手机主屏</button>
+      </div>
+      <div class="set-grid">
+        <div class="tool">
+          <h3><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>导出 JSON 备份</h3>
+          <p>把收藏、学习状态、练习记录导出成一个 JSON 文件存到本地。换电脑或清理浏览器前务必点一下。</p>
+          <button id="t-export">立即导出备份</button>
+        </div>
+        <div class="tool">
+          <h3><svg viewBox="0 0 24 24"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M4 5h16"/></svg>导入恢复</h3>
+          <p>选择之前导出的 JSON 备份文件恢复数据，条数不限，自动与现有数据合并。</p>
+          <button id="t-import">选择备份文件</button>
+        </div>
+        <div class="tool">
+          <h3><svg viewBox="0 0 24 24"><path d="M20 12 12 20a8 8 0 1 1 0-16 8 8 0 0 1 8 8z"/><path d="M12 8v4M12 16h.01"/></svg>数据概况</h3>
+          <p id="t-summary">正在统计…</p>
+          <button class="ghost" id="t-clear">清空全部学习数据</button>
+        </div>
+        <div class="tool">
+          <h3><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.8" cy="8.8" r="1.9"/><path d="m21 15-4.6-4.6L6 21"/></svg>封面与头像</h3>
+          <p>封面为各专辑的真实唱片封面，头像是歌手本人照片。你可以把任意一首换成自己的图，图片存在本机浏览器。</p>
+          <p id="t-art">正在统计…</p>
+          <button class="ghost" id="t-art-clear">清除全部自定义图片</button>
+        </div>
+        <div class="tool">
+          <h3><svg viewBox="0 0 24 24"><path d="M4 19V5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 9h7M8 13h7M8 17h4"/></svg>数据来源</h3>
+          <p id="t-source">正在统计…</p>
+          <button class="ghost" id="t-report">查看未识别清单</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 我的曲谱 -->
+    <section class="view" id="v-lib">
+      <div class="page-title">
+        <h2>我的曲谱</h2>
+        <div style="display:flex;align-items:center;gap:16px">
+          <p>共 <b id="lib-count">0</b> 首谱子</p>
+          <div class="view-toggle">
+            <button id="vt-list" class="on" title="列表视图"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.6 6h.01M3.6 12h.01M3.6 18h.01"/></svg></button>
+            <button id="vt-grid" title="网格视图"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <input id="q-lib" type="search" placeholder="搜索歌曲 / 歌手" autocomplete="off">
+      </div>
+      <div class="filters">
+        <select id="f-artist"><option value="">全部歌手</option></select>
+        <select id="f-genre"><option value="">全部曲风</option></select>
+        <select id="f-cat"><option value="">全部类别</option></select>
+        <select id="f-level"><option value="">全部难度</option></select>
+        <select id="f-status"><option value="">全部状态</option></select>
+        <select id="f-sort">
+          <option value="idx">默认顺序</option>
+          <option value="title">按曲名</option>
+          <option value="artist">按歌手</option>
+          <option value="level">按难度</option>
+          <option value="plays">按练习次数</option>
+          <option value="last">按最近练习</option>
+        </select>
+      </div>
+      <div id="lib-chips" class="chips" hidden></div>
+      <div id="lib-preset-wrap"></div>
+      <div class="lib-list" id="lib-grid"></div>
+      <div class="more-wrap" id="lib-more-wrap" hidden><button id="lib-more">加载更多</button></div>
+    </section>
+
+    <!-- 歌手 -->
+    <section class="view" id="v-artists">
+      <div class="ar-top">
+        <button class="ar-back" id="arBack">‹ 返回功能</button>
+        <div class="ar-htxt">
+          <h2><span class="ar-hav" id="arHav" hidden></span><span id="arTitle">按歌手找</span></h2>
+          <p id="arSub">选择一位歌手，再进入对应曲目</p>
+        </div>
+        <p class="ar-stat" id="arStat"></p>
+      </div>
+      <div class="search" id="arSearch">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <input id="q-ar" type="search" placeholder="搜索歌手名，如 周杰伦 / BEYOND / 王" autocomplete="off">
+      </div>
+      <div class="ar-grid" id="arGrid"></div>
+      <div class="rlist" id="arSongs" hidden></div>
+    </section>
+
+    <!-- 收藏 -->
+    <section class="view" id="v-fav">
+      <div class="page-title"><h2>收藏</h2><p>共 <b id="fav-count">0</b> 首</p></div>
+      <div class="grid3" id="fav-grid"></div>
+    </section>
+
+    <!-- 练习记录 -->
+    <section class="view" id="v-log">
+      <div class="page-title"><h2>练习记录</h2><p>每次在谱面页点“完成本次练习”都会记一笔</p></div>
+      <div class="stats">
+        <div class="stat"><div class="n" id="st-total">0</div><div class="l">累计练习次数</div></div>
+        <div class="stat"><div class="n" id="st-streak">0</div><div class="l">连续练习天数</div></div>
+        <div class="stat"><div class="n" id="st-month">0</div><div class="l">本月练习天数</div></div>
+      </div>
+      <div class="heat">
+        <h3>近 5 周练习热力图</h3>
+        <div id="heat-svg"></div>
+      </div>
+      <div id="log-list"></div>
+    </section>
+
+    <!-- 我的标签 -->
+    <section class="view" id="v-tags">
+      <div class="page-title"><h2>我的标签</h2><p>点头像或标签可直接跳到对应曲目</p></div>
+      <div class="tagbox"><h3>按歌手<span>点头像看他的曲目</span></h3><div class="artist-grid" id="artist-grid"></div></div>
+      <div id="tag-groups"></div>
+    </section>
+
+
+    <!-- 最近在学 -->
+    <section class="view" id="v-learning">
+      <div class="page-title"><h2>新学</h2><p>共 <b id="learn-count">0</b> 首 · 新加入曲库的谱子会自动归入这里，学会后点「我学会了」就移出</p></div>
+      <div class="dlbar">
+        <button class="gbtn solid" id="btn-add-learning2"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>添加曲谱</button>
+        <button class="hlink" id="lnk-learn-one">随机练一首 ›</button>
+      </div>
+      <div class="rlist" id="learn-body"></div>
+    </section>
+
+    <!-- 下载 -->
+    <section class="view" id="v-download">
+      <div class="page-title"><h2>下载谱面</h2><p>把谱面原图存到本机</p></div>
+      <div class="dlnote">浏览器会限制批量下载，本页逐张间隔触发；若被拦截，请在地址栏右侧允许「下载多个文件」。</div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <input id="q-dl" type="search" placeholder="搜索歌曲 / 歌手" autocomplete="off">
+      </div>
+      <div class="dlbar">
+        <button class="gbtn solid" id="dl-go">下载所选</button>
+        <button class="hlink" id="dl-all">全选当前</button>
+        <button class="hlink" id="dl-none">清空</button>
+        <span class="n" id="dl-sel">已选 0 首</span>
+        <span class="n" id="dl-count"></span>
+      </div>
+      <div id="dl-list"></div>
+    </section>
+    </div><!-- /.main-col -->
+
+    <!-- 右侧栏：今日练习 / 练习日历 -->
+    <aside class="rail" id="rail">
+      <div class="rcard2">
+        <div class="rtitle"><b>今日练习</b><span id="lnk-cal">练习日历 ›</span></div>
+        <div class="rtop">
+          <div class="ring">
+            <svg viewBox="0 0 140 140">
+              <circle class="rbg" cx="70" cy="70" r="60"></circle>
+              <circle class="rfg" id="ringFg" cx="70" cy="70" r="60" stroke-dasharray="377" stroke-dashoffset="377"></circle>
+            </svg>
+            <div class="rv"><b><span id="ringV">0</span><s>/</s><span id="ringG">5</span></b><i>首</i></div>
+          </div>
+          <div class="rstats">
+            <div class="rstat"><span class="si" style="background:#E8F6EC"><svg viewBox="0 0 24 24" style="stroke:#2FA36B"><path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></span><span class="sv"><em>练习时长</em><b id="stTime">0 分钟</b></span></div>
+            <div class="rstat"><span class="si" style="background:#E6F1FD"><svg viewBox="0 0 24 24" style="stroke:#3E8FD8"><path d="M5.5 19.5v-7M12 19.5V5M18.5 19.5v-4.5"/></svg></span><span class="sv"><em>完成歌曲</em><b id="stSong">0 首</b></span></div>
+            <div class="rstat"><span class="si" style="background:#FFEDE0"><svg viewBox="0 0 24 24" style="stroke:#F5813B"><path d="M12 2.8c3.4 4 6.2 6.4 6.2 10.6A6.2 6.2 0 0 1 5.8 13.4c0-2.6 1.6-4.4 3.2-6.2.4 1.4 1.2 2.2 2.2 2.6-.4-2.6.2-4.6.8-7z"/></svg></span><span class="sv"><em>连续练习</em><b id="stStreak">0 天</b></span></div>
+          </div>
+        </div>
+        <button class="ctabar" id="railGo">继续练习<svg class="tri" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+      </div>
+      <div class="rcard2">
+        <div class="rtitle"><b>练习日历</b><span id="calNav">—</span></div>
+        <div class="cal" id="calBody"></div>
+      </div>
+      <div class="mood"><p>坚持一点点，<br>就能遇见更好的自己。</p><i></i></div>
+    </aside>
+  </main>
+</div>
+
+<!-- 悬浮提示铃 -->
+<button class="fab" id="fab" title="数据提醒"><svg viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 1 0-12 0c0 7-3 8.5-3 8.5h18s-3-1.5-3-8.5"/><path d="M13.7 20.5a2 2 0 0 1-3.4 0"/></svg><i id="fabBadge">0</i></button>
+
+<!-- 详情页 -->
+<div class="detail" id="detail" hidden>
+  <div class="dt-shell">
+    <div class="dt-bar">
+      <button class="dt-back" id="dt-back"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="m15 18-6-6 6-6"/></svg>返回</button>
+      <button class="dt-cover-btn" id="dt-cover-btn" title="更换封面"><img class="dt-cover" id="dt-cover" alt="" src=""></button>
+      <div class="dt-name"><b id="dt-title">—</b><div class="dt-subwrap" id="dt-subwrap"><span id="dt-sub">—</span></div></div>
+      <div class="dt-tools">
+        <button class="dt-nav" id="dt-prev">上一首 ‹</button>
+        <button class="dt-nav" id="dt-next">下一首 ›</button>
+        <select id="dt-status" class="mchip" style="border:0;font-family:inherit">
+          <option value="new">未开始</option>
+          <option value="learning">新学</option>
+          <option value="known">已学会</option>
+        </select>
+        <button class="dt-known" id="dt-known" title="标记已学会，移出「新学」"><svg viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></svg><span id="dt-known-t">我学会了</span></button>
+        <button class="dt-fav" id="dt-fav"><svg viewBox="0 0 24 24"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1l1.7 1.7L12 21.5l7.1-7.1 1.7-1.7a5 5 0 0 0 0-7.1z"/></svg><span id="dt-fav-t">收藏</span></button>
+        <button class="btn-solid" id="dt-done">完成本次练习</button>
+      </div>
+      <div class="dt-zoom">
+        <button data-z="fit">适应宽度</button>
+        <button data-z="out">−</button>
+        <span class="zval" id="dt-zval" title="点一下可输入任意比例；Ctrl/⌘+滚轮也能缩放">适宽</span>
+        <button data-z="in">＋</button>
+        <button data-z="100">原图</button>
+        <input type="range" class="zslider" id="dt-zslider" min="0" max="1000" step="1" value="500"
+               title="左右拖动即可缩放（20%–1200%，中间为原图大小）" aria-label="缩放比例">
+      </div>
+    </div>
+    <div class="dt-canvas" id="dt-canvas"><img id="dt-img" alt="" src=""></div>
+  </div>
+</div>
+
+<input type="file" id="fileImport" accept=".json,application/json">
+<input type="file" id="fileCover" accept="image/*">
+<input type="file" id="fileAvatar" accept="image/*">
+
+<!-- 搜索实时联想（首页 / 我的曲谱 / 功能 三个搜索框共用） -->
+<div class="sugbox" id="sugbox" hidden></div>
+
+<!-- 从曲库添加曲谱到「正在学」 -->
+<div class="pick" id="pick" hidden>
+  <div class="pk-shell">
+    <div class="pk-head">
+      <div><h3>添加曲谱到「新学」</h3><p>从已有曲库里勾选，确认后进入首页「新学」</p></div>
+      <button class="pk-x" id="pk-close" title="关闭">×</button>
+    </div>
+    <div class="search" style="margin:0 0 12px">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+      <input id="pk-q" type="search" placeholder="筛选歌曲 / 歌手" autocomplete="off">
+    </div>
+    <div class="pk-list" id="pk-list"></div>
+    <div class="pk-foot">
+      <span class="pk-sel" id="pk-sel">已选 0 首</span>
+      <button class="btn-line" id="pk-cancel">取消</button>
+      <button class="btn-solid" id="pk-ok">添加到正在学</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   弦库 · 吉他谱管理台
+   数据来源：本地真实读取的吉他谱图片（D:\桌面\打包吉他谱），新增曲目按同一规范追加
+   架构：数据层(localStorage) → 计算层 → 渲染层，单向调用，
+        所有联动统一走 refreshAll()，渲染函数之间互不调用。
+   ============================================================ */
+
+/* ---------- 数据层 ---------- */
+var SONGS = [{"i":0,"f":"Letting go.jpg","t":"Letting Go","a":"蔡健雅","g":"流行","c":"国语","k":"C","ok":"D#","capo":"2品","ts":"4/4","d":"中等"},{"i":1,"f":"一千个伤心的理由.jpg","t":"一千个伤心的理由","a":"张学友","g":"流行","c":"国语","k":"bB","ok":"bE","capo":"3品","ts":"4/4","d":"中等"},{"i":2,"f":"一场游戏一场梦.jpg","t":"一场游戏一场梦","a":"王杰","g":"流行","c":"国语","k":"bB","ok":"C","capo":"3品","ts":"4/4","d":"中等"},{"i":3,"f":"一生中最爱.jpg","t":"一生中最爱","a":"谭咏麟","g":"流行","c":"粤语","k":"bE","ok":"F","capo":"3品","ts":"4/4","d":"中等"},{"i":4,"f":"三 人游.jpg","t":"三人游","a":"方大同","g":"流行","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":5,"f":"不分手的恋爱.jpg","t":"不分手的恋爱","a":"汪苏泷","g":"流行","c":"国语","k":"A","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":6,"f":"不是因为寂寞才想你.jpg","t":"不是因为寂寞才想你","a":"王筝","g":"流行","c":"国语","k":"F","ok":"A","capo":"5品","ts":"4/4","d":"中等"},{"i":7,"f":"不浪漫的罪名.jpg","t":"不浪漫罪名","a":"王杰","g":"流行","c":"粤语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":8,"f":"不能说的秘密.jpg","t":"不能说的秘密","a":"周杰伦","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":9,"f":"世界末日.jpg","t":"世界末日","a":"周杰伦","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":10,"f":"世界赠予我的.jpg","t":"世界赠予我的","a":"王菲","g":"流行","c":"国语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":11,"f":"二十二.jpg","t":"二十二","a":"陶喆","g":"流行","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":12,"f":"于是.jpg","t":"于是","a":"郑润泽","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":13,"f":"交换余生.jpg","t":"交换余生","a":"林俊杰","g":"流行","c":"国语","k":"C","ok":"D","capo":"2品","ts":"4/4","d":"中等"},{"i":14,"f":"传奇.jpg","t":"传奇","a":"李健","g":"民谣","c":"国语","k":"bB","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":15,"f":"伤心太平洋.jpg","t":"伤心太平洋","a":"任贤齐","g":"流行","c":"国语","k":"bF","ok":"","capo":"6品","ts":"4/4","d":"中等"},{"i":16,"f":"你不知道的事.jpg","t":"你不知道的事","a":"王力宏","g":"流行","c":"国语","k":"D","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":17,"f":"你的眼神.jpg","t":"你的眼神","a":"蔡琴","g":"经典","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":18,"f":"你瞒我瞒.jpg","t":"你瞒我瞒","a":"陈柏宇","g":"流行","c":"粤语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":19,"f":"依然爱你.jpg","t":"依然爱你","a":"王力宏","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":20,"f":"倒带.jpg","t":"倒带","a":"蔡依林","g":"流行","c":"国语","k":"C","ok":"","capo":"不需要夹品","ts":"4/4","d":"简单"},{"i":21,"f":"倩女幽魂.jpg","t":"倩女幽魂","a":"张国荣","g":"流行","c":"粤语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":22,"f":"偏爱.jpg","t":"偏爱","a":"张芸京","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":23,"f":"像风一样自由.jpg","t":"像风一样自由","a":"许巍","g":"摇滚","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":24,"f":"光年之外.jpg","t":"光年之外","a":"邓紫棋","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":25,"f":"光辉岁月.jpg","t":"光辉岁月","a":"BEYOND","g":"摇滚","c":"粤语","k":"C","ok":"E","capo":"4品","ts":"4/4","d":"进阶"},{"i":26,"f":"其实.jpg","t":"其实","a":"薛之谦","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":27,"f":"别找我麻烦.jpg","t":"别找我麻烦","a":"蔡健雅","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":28,"f":"勇气.jpg","t":"勇气","a":"梁静茹","g":"流行","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"简单"},{"i":29,"f":"匿名的朋友.jpg","t":"匿名的好友","a":"杨丞琳","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":30,"f":"十年.jpg","t":"十年","a":"陈奕迅","g":"流行","c":"国语","k":"bG","ok":"","capo":"1品","ts":"4/4","d":"简单"},{"i":31,"f":"单身情歌.jpg","t":"单身情歌","a":"林志炫","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"6/8","d":"中等"},{"i":32,"f":"可惜不是你.jpg","t":"可惜不是你","a":"梁静茹","g":"流行","c":"国语","k":"#F","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":33,"f":"吉他谱子/七里香.jpg","t":"七里香","a":"周杰伦","g":"流行","c":"国语","k":"#C","ok":"#D","capo":"-1","ts":"4/4","d":"中等"},{"i":34,"f":"吉他谱子/体面.jpg","t":"体面","a":"于文文","g":"流行","c":"国语","k":"C","ok":"bB","capo":"3品","ts":"4/4","d":"中等"},{"i":35,"f":"吉他谱子/再回首.jpg","t":"再回首","a":"姜育恒","g":"经典","c":"国语","k":"C","ok":"G","capo":"7品","ts":"4/4","d":"简单"},{"i":36,"f":"吉他谱子/再见.png","t":"再见","a":"张震岳","g":"流行","c":"国语","k":"C","ok":"","capo":"5品(男)","ts":"4/4","d":"简单"},{"i":37,"f":"吉他谱子/凄美地.jpg","t":"凄美地","a":"郭顶","g":"流行","c":"国语","k":"D","ok":"","capo":"","ts":"4/4","d":"进阶"},{"i":38,"f":"吉他谱子/嘀嗒.jpg","t":"嘀嗒","a":"侃侃","g":"民谣","c":"国语","k":"E","ok":"","capo":"3品","ts":"4/4","d":"简单"},{"i":39,"f":"吉他谱子/夜空中最亮的星.png","t":"夜空中最亮的星","a":"逃跑计划","g":"摇滚","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":40,"f":"吉他谱子/安河桥.jpg","t":"安河桥","a":"宋冬野","g":"民谣","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":41,"f":"吉他谱子/平凡之路.jpg","t":"平凡之路","a":"朴树","g":"民谣","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":42,"f":"吉他谱子/当你.jpg","t":"当你","a":"林俊杰","g":"流行","c":"国语","k":"C","ok":"C","capo":"","ts":"4/4","d":"简单"},{"i":43,"f":"吉他谱子/当你老了.jpg","t":"当你老了","a":"赵照","g":"民谣","c":"国语","k":"D","ok":"D","capo":"2品","ts":"4/4","d":"简单"},{"i":44,"f":"吉他谱子/往后余生.jpg","t":"往后余生","a":"马良","g":"民谣","c":"国语","k":"D","ok":"C","capo":"2品","ts":"4/4","d":"简单"},{"i":45,"f":"吉他谱子/情非得已.jpg","t":"情非得已","a":"庾澄庆","g":"流行","c":"国语","k":"C","ok":"C","capo":"0","ts":"4/4","d":"简单"},{"i":46,"f":"吉他谱子/成都.jpg","t":"成都","a":"赵雷","g":"民谣","c":"国语","k":"C","ok":"bE","capo":"3品","ts":"4/4","d":"简单"},{"i":47,"f":"吉他谱子/我怀念的.jpg","t":"我怀念的","a":"孙燕姿","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":48,"f":"吉他谱子/我要你.jpg","t":"我要你","a":"任素汐","g":"民谣","c":"国语","k":"D","ok":"D","capo":"2品","ts":"4/4","d":"简单"},{"i":49,"f":"吉他谱子/晴天.jpg","t":"晴天","a":"周杰伦","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":50,"f":"吉他谱子/未学会/奇妙能力歌.jpg","t":"奇妙能力歌","a":"陈粒","g":"民谣","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":51,"f":"吉他谱子/未学会/慢慢喜欢你.jpg","t":"慢慢喜欢你","a":"莫文蔚","g":"流行","c":"国语","k":"G","ok":"G","capo":"5品","ts":"4/4","d":"中等"},{"i":52,"f":"吉他谱子/未学会/等你下课.jpg","t":"等你下课","a":"周杰伦","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":53,"f":"吉他谱子/水星记.jpg","t":"水星记","a":"郭顶","g":"流行","c":"国语","k":"F","ok":"F","capo":"5品","ts":"4/4","d":"进阶"},{"i":54,"f":"吉他谱子/海阔天空.jpg","t":"海阔天空","a":"BEYOND","g":"摇滚","c":"粤语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"困难"},{"i":55,"f":"吉他谱子/温柔.jpg","t":"温柔","a":"五月天","g":"摇滚","c":"国语","k":"C","ok":"G","capo":"5品","ts":"4/4","d":"中等"},{"i":56,"f":"吉他谱子/爱人错过.jpg","t":"爱人错过","a":"告五人","g":"摇滚","c":"国语","k":"C","ok":"bE","capo":"1品","ts":"4/4","d":"中等"},{"i":57,"f":"吉他谱子/童年.jpg","t":"童年","a":"罗大佑","g":"民谣","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":58,"f":"后来.jpg","t":"后来","a":"刘若英","g":"流行","c":"国语","k":"C","ok":"bE","capo":"3品","ts":"4/4","d":"中等"},{"i":59,"f":"听海.jpg","t":"听海","a":"张惠妹","g":"流行","c":"国语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":60,"f":"命运.jpg","t":"命运","a":"家家","g":"流行","c":"国语","k":"F","ok":"","capo":"6品","ts":"4/4","d":"中等"},{"i":61,"f":"唯一(邓紫棋).jpg","t":"唯一","a":"邓紫棋","g":"流行","c":"国语","k":"D","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":62,"f":"唯一.jpg","t":"唯一","a":"王力宏","g":"流行","c":"国语","k":"E","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":63,"f":"嘉宾.jpg","t":"嘉宾","a":"张远","g":"流行","c":"国语","k":"G","ok":"A","capo":"2品","ts":"4/4","d":"中等"},{"i":64,"f":"多远都要在一起.jpg","t":"多远都要在一起","a":"邓紫棋","g":"流行","c":"国语","k":"C","ok":"bE","capo":"3品","ts":"4/4","d":"中等"},{"i":65,"f":"大眠.jpg","t":"大眠","a":"王心凌","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":66,"f":"天下.jpg","t":"天下","a":"张杰","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":67,"f":"天后.jpg","t":"天后","a":"陈势安","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":68,"f":"女孩.jpg","t":"女孩","a":"韦礼安","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":69,"f":"如愿.jpg","t":"如愿","a":"王菲","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":70,"f":"如果可以.jpg","t":"如果可以","a":"韦礼安","g":"流行","c":"国语","k":"bE","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":71,"f":"小小.jpg","t":"小小","a":"容祖儿","g":"流行","c":"国语","k":"E","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":72,"f":"小幸运.jpg","t":"小幸运","a":"田馥甄","g":"流行","c":"国语","k":"C","ok":"A","capo":"5品","ts":"4/4","d":"中等"},{"i":73,"f":"就是爱你.jpg","t":"就是爱你","a":"陶喆","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":74,"f":"广东爱情故事.jpg","t":"广东爱情故事","a":"广东雨神","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"简单"},{"i":75,"f":"开始懂了.jpg","t":"开始懂了","a":"孙燕姿","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":76,"f":"当爱已成往事.jpg","t":"当爱已成往事","a":"张国荣","g":"经典","c":"国语","k":"B","ok":"","capo":"降半音调弦","ts":"4/4","d":"中等"},{"i":77,"f":"心动.jpg","t":"心动","a":"陈洁仪","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":78,"f":"怎么说我不爱你.jpg","t":"怎么说我不爱你","a":"萧敬腾","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":79,"f":"思念是一种病.jpg","t":"思念是一种病","a":"张震岳","g":"流行","c":"国语","k":"A","ok":"","capo":"3品","ts":"4/4","d":"简单"},{"i":80,"f":"情非得已.jpg","t":"情非得已","a":"庾澄庆","g":"流行","c":"国语","k":"C","ok":"","capo":"0品","ts":"4/4","d":"简单"},{"i":81,"f":"我不难过.jpg","t":"我不难过","a":"孙燕姿","g":"流行","c":"国语","k":"E","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":82,"f":"我们的爱.jpg","t":"我们的爱","a":"飞儿乐团","g":"摇滚","c":"国语","k":"G","ok":"A","capo":"1品","ts":"4/4","d":"中等"},{"i":83,"f":"我只在乎你.jpg","t":"我只在乎你","a":"邓丽君","g":"经典","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"简单"},{"i":84,"f":"我只能离开.jpg","t":"我只能离开","a":"颜人中","g":"流行","c":"国语","k":"A","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":85,"f":"我好想你.jpg","t":"我好想你","a":"苏打绿","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":86,"f":"我很快乐.jpg","t":"我很快乐","a":"刘惜君","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":87,"f":"我是真的爱上你.jpg","t":"我是真的爱上你","a":"王杰","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":88,"f":"我的名字.jpg","t":"我的名字","a":"焦迈奇","g":"流行","c":"国语","k":"B","ok":"","capo":"降半音调弦","ts":"4/4","d":"中等"},{"i":89,"f":"我真的受伤了.jpg","t":"我真的受伤了","a":"张学友","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":90,"f":"戒烟.jpg","t":"戒烟","a":"李荣浩","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":91,"f":"找自己.jpg","t":"找自己","a":"陶喆","g":"流行","c":"国语","k":"A","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":92,"f":"挪威的森林.jpg","t":"挪威的森林","a":"伍佰","g":"摇滚","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":93,"f":"搁浅.jpg","t":"搁浅","a":"周杰伦","g":"流行","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"困难"},{"i":94,"f":"撒野.jpg","t":"撒野","a":"凯瑟喵","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":95,"f":"新地球.jpg","t":"新地球","a":"林俊杰","g":"流行","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"进阶"},{"i":96,"f":"无名的人.jpg","t":"无名的人","a":"毛不易","g":"民谣","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":97,"f":"无条件.jpg","t":"无条件","a":"陈奕迅","g":"流行","c":"粤语","k":"E","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":98,"f":"晚婚.jpg","t":"晚婚","a":"李宗盛","g":"民谣","c":"国语","k":"G","ok":"","capo":"1品","ts":"4/4","d":"简单"},{"i":99,"f":"晚安.jpg","t":"晚安","a":"颜人中","g":"流行","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":100,"f":"最佳损友.jpg","t":"最佳损友","a":"陈奕迅","g":"流行","c":"粤语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":101,"f":"最初的梦想.jpg","t":"最初的梦想","a":"范玮琪","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":102,"f":"最后一页.jpg","t":"最后一页","a":"江语晨","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":103,"f":"最近.jpg","t":"最近","a":"李圣杰","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":104,"f":"最长的电影.jpg","t":"最长的电影","a":"周杰伦","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"进阶"},{"i":105,"f":"月亮代表我的心.jpg","t":"月亮代表我的心","a":"邓丽君","g":"经典","c":"国语","k":"C","ok":"bG","capo":"1品","ts":"4/4","d":"简单"},{"i":106,"f":"月亮惹的祸.jpg","t":"月亮惹的祸","a":"张宇","g":"流行","c":"国语","k":"bG","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":107,"f":"月半小夜曲.jpg","t":"月半小夜曲","a":"李克勤","g":"流行","c":"粤语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":108,"f":"李白.jpg","t":"李白","a":"李荣浩","g":"流行","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":109,"f":"枫.jpg","t":"枫","a":"周杰伦","g":"流行","c":"国语","k":"C","ok":"","capo":"5品","ts":"4/4","d":"困难"},{"i":110,"f":"水中花.jpg","t":"水中花","a":"谭咏麟","g":"经典","c":"粤语","k":"C","ok":"E","capo":"4品","ts":"4/4","d":"中等"},{"i":111,"f":"永不失联的爱.jpg","t":"永不失联的爱","a":"周兴哲","g":"流行","c":"国语","k":"G","ok":"B","capo":"3品","ts":"4/4","d":"中等"},{"i":112,"f":"泡沫.jpg","t":"泡沫","a":"邓紫棋","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":113,"f":"流着泪说分手.jpg","t":"流着泪说分手","a":"金志文","g":"流行","c":"国语","k":"C","ok":"C","capo":"1品","ts":"4/4","d":"中等"},{"i":114,"f":"海阔天空C调.jpg","t":"海阔天空（C调版）","a":"BEYOND","g":"摇滚","c":"粤语","k":"C","ok":"F","capo":"5品","ts":"4/4","d":"进阶"},{"i":115,"f":"爱.jpg","t":"爱","a":"小虎队","g":"经典","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"简单"},{"i":116,"f":"爱丫爱丫.jpg","t":"爱丫爱丫","a":"BY2","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"简单"},{"i":117,"f":"爱如潮水.jpg","t":"爱如潮水","a":"张信哲","g":"流行","c":"国语","k":"C","ok":"E","capo":"4品","ts":"4/4","d":"中等"},{"i":118,"f":"爱很简单.jpg","t":"爱很简单","a":"陶喆","g":"流行","c":"国语","k":"C","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":119,"f":"爱我还是他.jpg","t":"爱我还是他","a":"陶喆","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"进阶"},{"i":120,"f":"爱是个什么东西.jpg","t":"爱是个什么东西","a":"陶喆","g":"流行","c":"国语","k":"G","ok":"C","capo":"降半音调弦","ts":"4/4","d":"困难"},{"i":121,"f":"爱错.jpg","t":"爱错","a":"王力宏","g":"流行","c":"国语","k":"bE","ok":"","capo":"1品","ts":"4/4","d":"困难"},{"i":122,"f":"特别的人.jpg","t":"特别的人","a":"方大同","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":123,"f":"猜不透.jpg","t":"猜不透","a":"丁当","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":124,"f":"玻璃之情.jpg","t":"玻璃之情","a":"张国荣","g":"流行","c":"粤语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"进阶"},{"i":125,"f":"痴心绝对.jpg","t":"痴心绝对","a":"李圣杰","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":126,"f":"真的爱你.jpg","t":"真的爱你","a":"BEYOND","g":"摇滚","c":"粤语","k":"C","ok":"","capo":"","ts":"4/4","d":"进阶"},{"i":127,"f":"紫荆花盛开.jpg","t":"紫荆花盛开","a":"李荣浩/梁咏琪","g":"流行","c":"国语","k":"B","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":128,"f":"红色高跟鞋.jpg","t":"红色高跟鞋","a":"蔡健雅","g":"流行","c":"国语","k":"C","ok":"E","capo":"2品","ts":"4/4","d":"中等"},{"i":129,"f":"绿色.jpg","t":"绿色","a":"陈雪凝","g":"流行","c":"国语","k":"E","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":130,"f":"胆小鬼.jpg","t":"胆小鬼","a":"梁咏琪","g":"流行","c":"国语","k":"G","ok":"","capo":"","ts":"4/4","d":"简单"},{"i":131,"f":"背对背拥抱.jpg","t":"背对背拥抱","a":"林俊杰","g":"流行","c":"国语","k":"E","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":132,"f":"至少还有你.jpg","t":"至少还有你","a":"张国荣","g":"经典","c":"国语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":133,"f":"花海.jpg","t":"花海","a":"周杰伦","g":"流行","c":"国语","k":"G","ok":"A","capo":"2品","ts":"4/4","d":"进阶"},{"i":134,"f":"若月亮没来.jpg","t":"若月亮没来","a":"王宇宙Leto","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":135,"f":"葡萄成熟时.jpg","t":"葡萄成熟时","a":"陈奕迅","g":"流行","c":"粤语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":136,"f":"蒲公英的约定.jpg","t":"蒲公英的约定","a":"周杰伦","g":"流行","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"进阶"},{"i":137,"f":"蓝莲花.jpg","t":"蓝莲花","a":"许巍","g":"摇滚","c":"国语","k":"E","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":138,"f":"蝴蝶.jpg","t":"蝴蝶","a":"陶喆","g":"流行","c":"国语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":139,"f":"被动.jpg","t":"被动","a":"伍佰","g":"摇滚","c":"国语","k":"C","ok":"","capo":"","ts":"4/4","d":"中等"},{"i":140,"f":"讲不出再见.jpg","t":"讲不出再见","a":"谭咏麟","g":"经典","c":"粤语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"中等"},{"i":141,"f":"说谎.jpg","t":"说谎","a":"林宥嘉","g":"流行","c":"国语","k":"B","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":142,"f":"谁明浪子心.jpg","t":"谁明浪子心","a":"王杰","g":"流行","c":"粤语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":143,"f":"贝加尔湖畔.jpg","t":"贝加尔湖畔","a":"李健","g":"民谣","c":"国语","k":"C","ok":"F","capo":"5品","ts":"4/4","d":"中等"},{"i":144,"f":"身骑白马.jpg","t":"身骑白马","a":"徐佳莹","g":"流行","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":145,"f":"过火.jpg","t":"过火","a":"张信哲","g":"流行","c":"国语","k":"bG","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":146,"f":"遇见.jpg","t":"遇见","a":"孙燕姿","g":"流行","c":"国语","k":"A","ok":"","capo":"1品","ts":"4/4","d":"简单"},{"i":147,"f":"那些你很冒险的梦.jpg","t":"那些你很冒险的梦","a":"林俊杰","g":"流行","c":"国语","k":"D","ok":"","capo":"2品","ts":"4/4","d":"进阶"},{"i":148,"f":"那些年.jpg","t":"那些年","a":"胡夏","g":"流行","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":149,"f":"难舍难分.jpg","t":"难舍难分","a":"谭咏麟","g":"经典","c":"粤语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":150,"f":"雨天.jpg","t":"雨天","a":"孙燕姿","g":"流行","c":"国语","k":"bD","ok":"","capo":"1品","ts":"4/4","d":"中等"},{"i":151,"f":"雨爱.jpg","t":"雨爱","a":"杨丞琳","g":"流行","c":"国语","k":"E","ok":"","capo":"4品","ts":"4/4","d":"中等"},{"i":152,"f":"需要人陪.jpg","t":"需要人陪","a":"王力宏","g":"流行","c":"国语","k":"F","ok":"","capo":"5品","ts":"4/4","d":"中等"},{"i":153,"f":"风继续吹.jpg","t":"风继续吹","a":"张国荣","g":"经典","c":"粤语","k":"C","ok":"","capo":"0~1品","ts":"4/4","d":"简单"},{"i":154,"f":"飞鸟和蝉.jpg","t":"飞鸟和蝉","a":"任然","g":"流行","c":"国语","k":"bB","ok":"","capo":"3品","ts":"4/4","d":"中等"},{"i":155,"f":"龙卷风.jpg","t":"龙卷风","a":"周杰伦","g":"流行","c":"国语","k":"A","ok":"","capo":"2品","ts":"4/4","d":"简单"},{"i":156,"f":"你要的爱.jpg","t":"你要的爱","a":"戴佩妮","g":"流行","c":"国语","k":"F","ok":"F","capo":"","ts":"4/4","d":"中等","nl":1}];
+
+var UNKNOWN = [{"file":"不能说的秘密.jpg","field":"歌手","value":"周杰伦","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"偏爱.jpg","field":"歌手","value":"张芸京","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"其实.jpg","field":"歌手","value":"薛之谦","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"单身情歌.jpg","field":"歌手","value":"林志炫","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/体面.jpg","field":"歌手","value":"于文文","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/再回首.jpg","field":"歌手","value":"姜育恒","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/凄美地.jpg","field":"歌手","value":"郭顶","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/嘀嗒.jpg","field":"歌手","value":"侃侃","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/安河桥.jpg","field":"歌手","value":"宋冬野","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/平凡之路.jpg","field":"歌手","value":"朴树","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/当你老了.jpg","field":"歌手","value":"赵照","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/成都.jpg","field":"歌手","value":"赵雷","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/我要你.jpg","field":"歌手","value":"任素汐","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/未学会/慢慢喜欢你.jpg","field":"歌手","value":"莫文蔚","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/水星记.jpg","field":"歌手","value":"郭顶","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"吉他谱子/童年.jpg","field":"歌手","value":"罗大佑","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"大眠.jpg","field":"歌手","value":"王心凌","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"天后.jpg","field":"歌手","value":"陈势安","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"怎么说我不爱你.jpg","field":"歌手","value":"萧敬腾","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"思念是一种病.jpg","field":"歌手","value":"张震岳","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"我的名字.jpg","field":"歌手","value":"焦迈奇","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"月亮惹的祸.jpg","field":"歌手","value":"张宇","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"爱丫爱丫.jpg","field":"歌手","value":"BY2","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"爱错.jpg","field":"歌手","value":"王力宏","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"若月亮没来.jpg","field":"歌手","value":"王宇宙Leto","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"蓝莲花.jpg","field":"歌手","value":"许巍","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"蝴蝶.jpg","field":"歌手","value":"陶喆","type":"已推断","note":"谱面头部未印刷演唱者，按该曲通行原唱推断，建议核对"},{"file":"至少还有你.jpg","field":"歌手","value":"张国荣","type":"需确认","note":"谱面标注演唱者为「张国荣」，该曲更常见的原唱标注为「林忆莲」（张国荣有翻唱版本），请确认以哪一个为准"},{"file":"不浪漫的罪名.jpg","field":"曲名","value":"不浪漫罪名","type":"文件名与谱面不一致","note":"已采用谱面印刷的曲名，原文件名为「不浪漫的罪名.jpg」"},{"file":"匿名的朋友.jpg","field":"曲名","value":"匿名的好友","type":"文件名与谱面不一致","note":"已采用谱面印刷的曲名，原文件名为「匿名的朋友.jpg」"},{"file":"海阔天空C调.jpg","field":"曲名","value":"海阔天空（C调版）","type":"文件名与谱面不一致","note":"已采用谱面印刷的曲名，原文件名为「海阔天空C调.jpg」"},{"file":"单身情歌.jpg","field":"拍号","value":"6/8","type":"已识别","note":"全部 156 份中唯一一份 6/8 拍谱面，其余均为 4/4"},{"file":"不分手的恋爱.jpg","field":"调式","value":"1=A","type":"已推断","note":"谱面未标注原调，仅标注 1=A 与变调夹第 3 品"},{"file":"不浪漫的罪名.jpg","field":"调式","value":"1=B","type":"已推断","note":"谱面仅标注 1=B，未标注原调"},{"file":"可惜不是你.jpg","field":"调式","value":"1=#F","type":"已推断","note":"谱面 1=#F（升F），非常规写法"},{"file":"我的名字.jpg","field":"调式","value":"1=B","type":"已推断","note":"谱面标注「降半音调弦，用C调指法」，未给出 1=X 的独立调号"},{"file":"（全部 156 份）","field":"曲风 / 类别 / 难度","value":"—","type":"已推断","note":"这三项不印刷在谱面上：曲风按曲目风格归类；类别为演唱语言（国语/粤语）；难度按和弦、横按、节奏与调性综合推断，均非谱面原文，可自行修改"},{"file":"（全部 156 份）","field":"谱型","value":"弹唱谱","type":"已推断","note":"全部谱面均带和弦图与歌词，判定为弹唱谱，无纯指弹独奏谱"}];
+var UNKNOWN_REAL = 0;
+
+var LS_KEY = 'wb_xiangu_v1';
+/* reviewDay：今天建议复习锁定的那一组，形如 { d:'2026-10-04', ids:[i,i,i] }
+   目的：切页面 / 刷新不再重新随机，一天只自动换一次，手动点「随机换一组」才换 */
+var state = { fav:{}, status:{}, plays:{}, last:{}, logs:[], seen:{}, covers:{}, avatars:{}, reviewDay:null };
+
+/* 初始状态来自文件夹命名这一真实信号：「吉他谱子/未学会/」视为新学 */
+(function seed(){
+  for (var k=0;k<SONGS.length;k++){
+    if (SONGS[k].f.indexOf('未学会/') >= 0) state.status[SONGS[k].i] = 'learning';
+  }
+})();
+
+/* 「新学」自动归类：曲库里带 nl=1 的谱子（后续新加进曲库的）一律先归入「新学」。
+   用户点「我学会了」后 state.status[i] 变成 'known'，键已存在，不会再被回填。
+   这样「以后每次加歌都自动进新学」是数据层保证的，不依赖任何手工标记。 */
+function seedNewLearn(){
+  var n = 0;
+  for (var k = 0; k < SONGS.length; k++){
+    var s = SONGS[k];
+    if (!s.nl) continue;
+    if (Object.prototype.hasOwnProperty.call(state.status, s.i)) continue;
+    state.status[s.i] = 'learning';
+    n++;
+  }
+  return n;
+}
+
+function loadState(){
+  try{
+    var raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    var o = JSON.parse(raw);
+    if (o && typeof o === 'object'){
+      if (o.fav)    state.fav    = o.fav;
+      if (o.status) state.status = o.status;
+      if (o.plays)  state.plays  = o.plays;
+      if (o.last)   state.last   = o.last;
+      if (o.logs && o.logs.length) state.logs = o.logs;
+      if (o.covers)  state.covers  = o.covers;
+      if (o.avatars) state.avatars = o.avatars;
+      if (o.reviewDay && o.reviewDay.d && o.reviewDay.ids) state.reviewDay = o.reviewDay;
+    }
+  }catch(e){ console.warn('本地数据读取失败，已使用默认状态'); }
+}
+function saveState(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); markSynced(); }
+  catch(e){ toast('本机存储写入失败，请及时导出备份'); }
+}
+/* 保存状态：侧栏已按效果图去掉同步提示胶囊，这里只做 toast 提示，元素缺失时静默 */
+function markSynced(){
+  var s = document.getElementById('syncPill');
+  if(!s) return;
+  s.classList.remove('busy');
+  var t = document.getElementById('syncText');
+  if(t) t.textContent = '已同步';
+}
+function markDirty(){
+  var s = document.getElementById('syncPill');
+  if(!s) return;
+  s.classList.add('busy');
+  var t = document.getElementById('syncText');
+  if(t) t.textContent = '正在保存…';
+}
+
+/* ---------- 计算层 ---------- */
+var TODAY = (function(){ var d=new Date(); return ymd(d); })();
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dayDiff(a,b){ return Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00'))/86400000); }
+
+function byId(i){ for (var k=0;k<SONGS.length;k++) if (SONGS[k].i===i) return SONGS[k]; return null; }
+function statusOf(i){ return state.status[i] || 'new'; }
+function playsOf(i){ return state.plays[i] || 0; }
+function lastOf(i){ return state.last[i] || ''; }
+function daysSince(i){ var l=lastOf(i); return l ? dayDiff(l, TODAY) : 99999; }
+function isFav(i){ return !!state.fav[i]; }
+function neverPracticed(i){ return playsOf(i) === 0; }
+function isStale(i){ return !neverPracticed(i) && daysSince(i) >= 30; }
+
+var LEVEL_ORDER = {'入门':0,'简单':1,'中等':2,'进阶':3,'困难':4};
+
+function learningList(){ return SONGS.filter(function(s){ return statusOf(s.i)==='learning'; }); }
+function knownList(){ return SONGS.filter(function(s){ return statusOf(s.i)==='known'; }); }
+function favList(){ return SONGS.filter(function(s){ return isFav(s.i); }); }
+function reviewPool(){
+  return SONGS.filter(function(s){ return daysSince(s.i) >= 30; });
+}
+function stalePool(){ return reviewPool(); }
+
+/* 曲库筛选（纯函数，不改状态） */
+function filterSongs(o){
+  var q = (o.q||'').trim().toLowerCase();
+  var out = SONGS.filter(function(s){
+    if (o.preset === 'fav'  && !isFav(s.i)) return false;
+    if (o.preset === 'learning' && statusOf(s.i) !== 'learning') return false;
+    if (o.preset === 'known'    && statusOf(s.i) !== 'known') return false;
+    if (o.preset === 'stale'    && !isStale(s.i)) return false;
+    if (o.artist && s.a !== o.artist) return false;
+    if (o.genre  && s.g !== o.genre)  return false;
+    if (o.cat    && s.c !== o.cat)    return false;
+    if (o.level  && s.d !== o.level)  return false;
+    if (o.status && statusOf(s.i) !== o.status) return false;
+    if (o.tag && !(s.g===o.tag || s.c===o.tag || s.d===o.tag || s.ts===o.tag)) return false;
+    if (q && s.t.toLowerCase().indexOf(q)<0 && s.a.toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  var srt = o.sort || 'idx';
+  out.sort(function(a,b){
+    if (srt==='title')  return a.t.localeCompare(b.t,'zh');
+    if (srt==='artist') return a.a.localeCompare(b.a,'zh') || a.t.localeCompare(b.t,'zh');
+    if (srt==='level')  return (LEVEL_ORDER[a.d]||9) - (LEVEL_ORDER[b.d]||9) || a.t.localeCompare(b.t,'zh');
+    if (srt==='plays')  return playsOf(b.i) - playsOf(a.i) || a.t.localeCompare(b.t,'zh');
+    if (srt==='last')   return (lastOf(b.i)||'').localeCompare(lastOf(a.i)||'') || a.t.localeCompare(b.t,'zh');
+    return a.i - b.i;
+  });
+  return out;
+}
+function distinct(key){
+  var m={}, out=[];
+  for (var k=0;k<SONGS.length;k++){ var v=SONGS[k][key]; if (v && !m[v]){ m[v]=1; out.push(v); } }
+  out.sort(function(a,b){ return a.localeCompare(b,'zh'); });
+  return out;
+}
+function countBy(key){
+  var m={};
+  for (var k=0;k<SONGS.length;k++){ var v=SONGS[k][key]; if(v){ m[v]=(m[v]||0)+1; } }
+  return m;
+}
+function statsSummary(){
+  var total = state.logs.length;
+  var days = {}; state.logs.forEach(function(l){ days[l.d]=1; });
+  var keys = Object.keys(days).sort();
+  var monthPrefix = TODAY.slice(0,7);
+  var month = keys.filter(function(d){ return d.indexOf(monthPrefix)===0; }).length;
+  // 连续天数（含今天或昨天为止）
+  var streak = 0;
+  if (keys.length){
+    var last = keys[keys.length-1];
+    if (dayDiff(last, TODAY) <= 1){
+      streak = 1;
+      for (var i=keys.length-1;i>0;i--){
+        if (dayDiff(keys[i-1], keys[i]) === 1) streak++; else break;
+      }
+    }
+  }
+  var played = Object.keys(state.plays).length;
+  return { total: total, days: keys.length, streak: streak, month: month, played: played };
+}
+
+/* ---------- 渲染层工具 ---------- */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function el(id){ return document.getElementById(id); }
+function setHTML(id, html){ el(id).innerHTML = html; }
+
+var toastTimer = null;
+function toast(msg){
+  var t = el('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 2400);
+}
+
+/* ---------- 封面 / 歌手头像 ---------- */
+var AV_HUES = [6,20,34,48,88,138,166,192,212,246,268,300,326,352];
+function hueOf(name){
+  var h = 0, s = String(name == null ? '' : name);
+  for (var k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) % 999983;
+  return AV_HUES[h % AV_HUES.length];
+}
+function avInitial(name){
+  var s = String(name == null ? '' : name).trim();
+  if (!s) return '?';
+  var c = s.charAt(0);
+  return /[a-zA-Z]/.test(c) ? c.toUpperCase() : c;
+}
+function coverSrc(i){ return state.covers[i] || ('assets/covers/' + i + '.jpg'); }
+/* 歌手头像：已上传照片 > 内置真实歌手照片 > 字标头像 */
+var AVATAR_MAP = {"蔡健雅":"assets/avatars/0.jpg","张学友":"assets/avatars/1.jpg","王杰":"assets/avatars/2.jpg","谭咏麟":"assets/avatars/3.jpg","方大同":"assets/avatars/4.jpg","汪苏泷":"assets/avatars/5.jpg","周杰伦":"assets/avatars/7.jpg","王菲":"assets/avatars/8.jpg","陶喆":"assets/avatars/9.jpg","郑润泽":"assets/avatars/10.jpg","林俊杰":"assets/avatars/11.jpg","李健":"assets/avatars/12.jpg","任贤齐":"assets/avatars/13.jpg","王力宏":"assets/avatars/14.jpg","蔡琴":"assets/avatars/15.jpg","陈柏宇":"assets/avatars/16.jpg","蔡依林":"assets/avatars/17.jpg","张国荣":"assets/avatars/18.jpg","张芸京":"assets/avatars/19.jpg","许巍":"assets/avatars/20.jpg","邓紫棋":"assets/avatars/21.jpg","薛之谦":"assets/avatars/23.jpg","梁静茹":"assets/avatars/24.jpg","杨丞琳":"assets/avatars/25.jpg","陈奕迅":"assets/avatars/26.jpg","林志炫":"assets/avatars/27.jpg","于文文":"assets/avatars/28.jpg","姜育恒":"assets/avatars/29.jpg","张震岳":"assets/avatars/30.jpg","郭顶":"assets/avatars/31.jpg","侃侃":"assets/avatars/32.jpg","逃跑计划":"assets/avatars/33.jpg","朴树":"assets/avatars/35.jpg","赵照":"assets/avatars/36.jpg","马良":"assets/avatars/37.jpg","庾澄庆":"assets/avatars/38.jpg","赵雷":"assets/avatars/39.jpg","孙燕姿":"assets/avatars/40.jpg","任素汐":"assets/avatars/41.jpg","陈粒":"assets/avatars/42.jpg","莫文蔚":"assets/avatars/43.jpg","五月天":"assets/avatars/44.jpg","告五人":"assets/avatars/45.jpg","罗大佑":"assets/avatars/46.jpg","刘若英":"assets/avatars/47.jpg","张惠妹":"assets/avatars/48.jpg","家家":"assets/avatars/49.jpg","张远":"assets/avatars/50.jpg","王心凌":"assets/avatars/51.jpg","张杰":"assets/avatars/52.jpg","陈势安":"assets/avatars/53.jpg","韦礼安":"assets/avatars/54.jpg","容祖儿":"assets/avatars/55.jpg","田馥甄":"assets/avatars/56.jpg","广东雨神":"assets/avatars/57.jpg","陈洁仪":"assets/avatars/58.jpg","萧敬腾":"assets/avatars/59.jpg","邓丽君":"assets/avatars/61.jpg","颜人中":"assets/avatars/62.jpg","苏打绿":"assets/avatars/63.jpg","刘惜君":"assets/avatars/64.jpg","焦迈奇":"assets/avatars/65.jpg","李荣浩":"assets/avatars/66.jpg","伍佰":"assets/avatars/67.jpg","凯瑟喵":"assets/avatars/68.jpg","毛不易":"assets/avatars/69.jpg","李宗盛":"assets/avatars/70.jpg","范玮琪":"assets/avatars/71.jpg","江语晨":"assets/avatars/72.jpg","李圣杰":"assets/avatars/73.jpg","张宇":"assets/avatars/74.jpg","李克勤":"assets/avatars/75.jpg","周兴哲":"assets/avatars/76.jpg","金志文":"assets/avatars/77.jpg","小虎队":"assets/avatars/78.jpg","BY2":"assets/avatars/79.jpg","张信哲":"assets/avatars/80.jpg","丁当":"assets/avatars/81.jpg","陈雪凝":"assets/avatars/83.jpg","梁咏琪":"assets/avatars/84.jpg","王宇宙Leto":"assets/avatars/85.jpg","林宥嘉":"assets/avatars/86.jpg","徐佳莹":"assets/avatars/87.jpg","胡夏":"assets/avatars/88.jpg","任然":"assets/avatars/89.jpg","王筝":"assets/avatars/6.jpg","宋冬野":"assets/avatars/34.jpg","李荣浩/梁咏琪":"assets/avatars/82.jpg","飞儿乐团":"assets/avatars/60.jpg","BEYOND":"assets/avatars/22.jpg","戴佩妮":"assets/avatars/156.jpg"};
+function avHtml(name, cls){
+  var c = cls ? ' ' + cls : '';
+  var custom = state.avatars[name];
+  if (custom) return '<img class="av av-img' + c + '" src="' + custom + '" alt="' + esc(name) + '">';
+  var real = AVATAR_MAP[name];
+  if (real) return '<img class="av av-img' + c + '" src="' + real + '" alt="' + esc(name) + '" loading="lazy">';
+  return '<span class="av' + c + '" style="background:hsl(' + hueOf(name) + ',44%,46%)" title="'
+    + esc(name) + '">' + esc(avInitial(name)) + '</span>';
+}
+function artStats(){
+  var cn = 0, an = 0, bytes = 0, k;
+  for (k in state.covers)  { if (state.covers[k])  { cn++; bytes += state.covers[k].length; } }
+  for (k in state.avatars) { if (state.avatars[k]) { an++; bytes += state.avatars[k].length; } }
+  return { cn: cn, an: an, kb: Math.round(bytes / 1024) };
+}
+function persist(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); markSynced(); return true; }
+  catch(e){ return false; }
+}
+/* 上传图片：居中裁剪成正方形后压缩，存本机 */
+var pickTarget = { type: 'cover', id: null, name: '' };
+var pickSeq = {};   // 目标 -> 选择序号，只丢弃「同一目标」的过期回调
+function pickCover(i){ pickTarget = {type:'cover', id:i, name:''}; el('fileCover').value=''; el('fileCover').click(); }
+function pickAvatar(n){ pickTarget = {type:'avatar', id:null, name:n}; el('fileAvatar').value=''; el('fileAvatar').click(); }
+function onPickImage(file){
+  if (!file) return;
+  if (!/^image\//.test(file.type)){ toast('请选择图片文件'); return; }
+  /* 立刻固定目标：异步回调期间 pickTarget 可能被下一次操作改写 */
+  var type = pickTarget.type;
+  var key = (type === 'cover') ? pickTarget.id : pickTarget.name;
+  var maxW = (type === 'cover') ? 640 : 240;
+  var seqKey = type + '|' + key;
+  var mySeq = (pickSeq[seqKey] = (pickSeq[seqKey] || 0) + 1);
+  var reader = new FileReader();
+  reader.onload = function(){
+    var img = new Image();
+    img.onerror = function(){ toast('图片读取失败'); };
+    img.onload = function(){
+      if (mySeq !== pickSeq[seqKey]) return;
+      var side = Math.min(img.width, img.height);
+      var sx = Math.round((img.width - side) / 2), sy = Math.round((img.height - side) / 2);
+      var cv = document.createElement('canvas');
+      cv.width = maxW; cv.height = maxW;
+      var cx = cv.getContext('2d');
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, maxW, maxW);
+      cx.drawImage(img, sx, sy, side, side, 0, 0, maxW, maxW);
+      var url = cv.toDataURL('image/jpeg', 0.78);
+      var store = (type === 'cover') ? state.covers : state.avatars;
+      var prev = store[key];
+      store[key] = url;
+      if (!persist()){
+        if (prev) store[key] = prev; else delete store[key];
+        toast('本机存储空间不足，图片未保存。建议先导出备份');
+        return;
+      }
+      toast(type === 'cover' ? '封面已更换：' + (byId(key) ? byId(key).t : '') : '头像已更换：' + key);
+      refreshAll();
+      if (cur !== null && type === 'cover' && cur === key) el('dt-cover').src = url;
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function tagRow(s){
+  return '<div class="card-tags"><span class="tag">'+esc(s.g)+'</span><span class="tag">'+esc(s.c)+'</span></div>';
+}
+/* ---------- 行内快捷操作（每首歌都有一份，避免反复点进谱子 / 展开菜单） ---------- */
+var ICO = {
+  star:  '<svg viewBox="0 0 24 24"><path d="M12 3.6l2.68 5.46 6.02.87-4.35 4.25 1.03 5.99L12 17.34l-5.38 2.83 1.03-5.99L3.3 9.93l6.02-.87z"/></svg>',
+  book:  '<svg viewBox="0 0 24 24"><path d="M11 4.2H6.3A1.8 1.8 0 0 0 4.5 6v13.8A1.8 1.8 0 0 0 6.3 21H11z"/><path d="M13 4.2h4.7A1.8 1.8 0 0 1 19.5 6v13.8A1.8 1.8 0 0 1 17.7 21H13z"/><path d="M12 3.4v18"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M4.8 12.7l4.7 4.7L19.4 7.3"/></svg>'
+};
+function icHTML(cls, svg, i, attr, on, label){
+  return '<button class="ic-btn ic-'+cls+(on?' on':'')+'" '+attr+'="'+i+'" title="'+label+'" aria-label="'+label+'">'+svg+'</button>';
+}
+/* 三态图标：收藏 / 新学 / 已学会。平时隐形，鼠标移到该行才浮现；已选中的常驻显示 */
+function quickHTML(s){
+  var i = s.i, f = isFav(i), st = statusOf(i), L = (st === 'learning'), K = (st === 'known');
+  return icHTML('fav',   ICO.star,  i, 'data-favq',   f, f ? '取消收藏' : '加入收藏')
+       + icHTML('learn', ICO.book,  i, 'data-learnq', L, L ? '移出「新学」' : '加入「新学」')
+       + icHTML('known', ICO.check, i, 'data-known',  K, K ? '取消「我学会了」' : '我学会了');
+}
+/* 「复习｜练过」分割按钮：左边进谱面，右边一键记一次练习（不必再点进谱子） */
+function actionsHTML(s, cls){
+  return '<div class="'+(cls || 'la')+'">'
+    + quickHTML(s)
+    + '<div class="sp">'
+      + '<button class="sp-a" data-open="'+s.i+'">复习</button>'
+      + '<button class="sp-b" data-pract="'+s.i+'" title="记录一次练习">＋练过</button>'
+    + '</div>'
+    + '<button class="btn-more" data-menu="'+s.i+'" title="更多操作" aria-label="更多操作">···</button>'
+    + '</div>';
+}
+function cardHTML(s){
+  return '<div class="card">'
+    + '<div class="card-img" data-open="'+s.i+'"><img loading="lazy" src="assets/covers/'+s.i+'.jpg" alt="'+esc(s.t)+'谱面缩略图"></div>'
+    + '<div class="card-title" data-open="'+s.i+'">'+esc(s.t)+'</div>'
+    + '<div class="card-artist">'+avHtml(s.a)+'<span class="an">'+esc(s.a)+'</span></div>'
+    + tagRow(s)
+    + actionsHTML(s, 'card-actions')
+    + '</div>';
+}
+function rowCardHTML(s){
+  var st = statusOf(s.i);
+  var sub = st==='known' ? '已掌握' : (neverPracticed(s.i) ? '还没练过' : '练习 '+playsOf(s.i)+' 次');
+  return '<div class="rowcard" data-open="'+s.i+'">'
+    + '<div class="thumb"><img loading="lazy" src="assets/covers/'+s.i+'.jpg" alt=""></div>'
+    + '<div class="rc-main"><div class="rc-title">'+esc(s.t)+'</div><div class="rc-sub">'+avHtml(s.a)+'<span class="rc-sub-t">'+esc(s.a)+' · '+sub+'</span></div></div>'
+    + actionsHTML(s)
+    + '</div>';
+}
+/* 曲库列表视图：一行一首，一屏看得更多 */
+function libRowHTML(s){
+  var st = statusOf(s.i);
+  var sub = st==='known' ? '已掌握' : (neverPracticed(s.i) ? '还没练过' : '练习 '+playsOf(s.i)+' 次');
+  return '<div class="lib-row" data-open="'+s.i+'">'
+    + '<div class="thumb"><img loading="lazy" src="assets/covers/'+s.i+'.jpg" alt=""></div>'
+    + '<div class="lm"><div class="lt">'+esc(s.t)+'</div>'
+    + '<div class="ls">'+avHtml(s.a)+'<span>'+esc(s.a)+'</span>'
+    + '<span class="tag">'+esc(s.g)+'</span><span class="tag">'+esc(s.c)+'</span>'
+    + '<span style="color:var(--muted2)">'+sub+'</span></div></div>'
+    + actionsHTML(s)
+    + '</div>';
+}
+function emptyHTML(msg, act, actLabel){
+  return '<div class="empty">'+msg+(act?'<br><br><b style="cursor:pointer" data-emptyact="'+act+'">'+actLabel+'</b>':'')+'</div>';
+}
+
+/* ---------- 渲染层：首页 ---------- */
+/* 每日一句：按日期从引言库取一条，同一天固定、跨天自动更换 */
+var DAILY_QUOTES = [
+  '音乐是生活的另一种表达。',
+  '把平凡的日子，弹成闪光的样子。',
+  '有些心事，交给六根弦就好。',
+  '慢一点也没关系，旋律会等你。',
+  '今天，也要为自己弹一首歌。',
+  '热爱可抵岁月漫长。',
+  '指尖走过的地方，就有光。',
+  '愿你每一次拨弦，都像拥抱自己。',
+  '生活给的答案，往往在下一根弦上。',
+  '不慌不忙，才是生活的节奏。',
+  '每个清晨，都值得一句轻声哼唱。',
+  '把心事写进歌里，让风替你带走。',
+  '一首歌的时间，够整理好心情。',
+  '你弹的每个音，都算数。',
+  '世界很吵，但你的旋律很安静。',
+  '愿你弹琴时，永远有光在心里。'
+];
+/* 用日期做稳定 hash，保证「当天恒定、跨天轮换」 */
+function quoteOfDay(d){
+  var key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  var h = key % DAILY_QUOTES.length;
+  return DAILY_QUOTES[(h + DAILY_QUOTES.length) % DAILY_QUOTES.length];
+}
+function renderGreeting(){
+  var d = new Date(), h = d.getHours(), g;
+  if (h < 6) g = '凌晨好'; else if (h < 11) g = '早上好'; else if (h < 13) g = '中午好';
+  else if (h < 18) g = '下午好'; else g = '晚上好';
+  el('greet').textContent = g + ' 👋';
+  el('heroDate').textContent = (d.getMonth()+1) + ' / ' + (d.getDate() < 10 ? '0' : '') + d.getDate();
+  el('heroWeek').textContent = '周' + '日一二三四五六'.charAt(d.getDay());
+  var q = el('heroQuote');
+  if (q) q.textContent = '"' + quoteOfDay(d) + '"';
+}
+/* 新学行：封面 / 曲名 / 歌手 / 状态 + 播放·继续练习·练过·更多 */
+function learnRowHTML(s){
+  var st = statusOf(s.i);
+  var sub = st === 'known' ? '已掌握' : (neverPracticed(s.i) ? '还没练过' : '练习 ' + playsOf(s.i) + ' 次');
+  return '<div class="rcard">'
+    + '<img class="cover" loading="lazy" data-open="' + s.i + '" src="assets/covers/' + s.i + '.jpg" alt="">'
+    + '<div class="info" data-open="' + s.i + '"><b>' + esc(s.t) + '</b>'
+    + '<span class="sub">' + avHtml(s.a) + '<span>' + esc(s.a) + '</span><span class="st">· ' + sub + '</span></span></div>'
+    + '<div class="acts">'
+      + '<button class="gbtn solid" data-open="' + s.i + '">继续练习</button>'
+      + '<button class="gbtn line" data-pract="' + s.i + '"><svg viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></svg>练过</button>'
+      + '<button class="mbtn" data-menu="' + s.i + '" title="更多操作">···</button>'
+    + '</div></div>';
+}
+/* 今日复习行：多一个收藏心形，标签给曲风 + 类别 */
+function reviewRowHTML(s){
+  var sub = neverPracticed(s.i) ? '还没练过' : '练习 ' + playsOf(s.i) + ' 次';
+  return '<div class="rcard">'
+    + '<img class="cover" loading="lazy" data-open="' + s.i + '" src="assets/covers/' + s.i + '.jpg" alt="">'
+    + '<div class="info" data-open="' + s.i + '"><b>' + esc(s.t) + '</b>'
+    + '<span class="sub">' + avHtml(s.a) + '<span>' + esc(s.a) + '</span>'
+    + '<span class="mini">' + esc(s.g) + '</span><span class="mini">' + esc(s.c) + '</span>'
+    + '<span class="st">' + sub + '</span></span></div>'
+    + '<div class="acts">'
+      + '<button class="hbtn' + (isFav(s.i) ? ' on' : '') + '" data-favq="' + s.i + '" title="收藏"><svg viewBox="0 0 24 24"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1l1.7 1.7L12 21.5l7.1-7.1 1.7-1.7a5 5 0 0 0 0-7.1z"/></svg></button>'
+      + '<button class="gbtn solid" data-open="' + s.i + '">复习</button>'
+      + '<button class="gbtn line" data-pract="' + s.i + '">＋练过</button>'
+      + '<button class="mbtn" data-menu="' + s.i + '" title="更多操作">···</button>'
+    + '</div></div>';
+}
+function renderHomeLearning(){
+  var list = learningList();
+  if (!list.length){
+    setHTML('home-learning', emptyHTML('「新学」里还没有曲目。以后每次往曲库加新谱子都会自动进这里；也可以点上方「添加曲谱」从已有曲库挑几首。', 'add-learning', '＋ 从曲库添加曲谱'));
+    return;
+  }
+  setHTML('home-learning', list.slice(0,2).map(learnRowHTML).join(''));
+}
+/* 从候选池随机挑一组当天推荐 */
+function pickReviewGroup(pool){
+  return shuffle(pool.slice()).slice(0, 3).map(function(s){ return s.i; });
+}
+/* 今天建议复习：一天锁定一组，切页面 / 刷新都不变；日期变了或手动点「随机换一组」才换 */
+function renderHomeReview(force){
+  var pool = reviewPool(), have = {}, saved = state.reviewDay, ids = [];
+  for (var k = 0; k < pool.length; k++) have[pool[k].i] = 1;
+  if (pool.length){
+    if (!force && saved && saved.d === TODAY && saved.ids && saved.ids.length){
+      ids = saved.ids.filter(function(i){ return have[i]; });
+    }
+    if (!ids.length) ids = pickReviewGroup(pool);
+  }
+  var next = { d: TODAY, ids: ids };
+  if (!saved || saved.d !== next.d || String(saved.ids) !== String(next.ids)){
+    state.reviewDay = next;
+    persist();                       /* 只在真正换组时写盘 */
+  }
+  homeReviewIds = ids;
+  if (!ids.length){
+    setHTML('home-review', emptyHTML('太棒了，最近练过的曲目都还在保鲜期内。去「我的曲谱」挑一首新的吧。', 'go-lib', '去挑一首 →'));
+    return;
+  }
+  setHTML('home-review', ids.map(byId).filter(Boolean).map(reviewRowHTML).join(''));
+}
+var homeReviewIds = [];
+function shuffle(a){
+  for (var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; }
+  return a;
+}
+function renderHome(){ renderGreeting(); renderHomeLearning(); renderHomeReview(); }
+
+/* ---------- 渲染层：右侧栏 / 新学 / 下载 ----------
+   注意铁律 9：todayStat() / calHTML() / dlRowHTML() 都是纯计算，不碰 DOM；
+   渲染只发生在 renderRail() / renderLearning() / renderDownload() 三个入口。 */
+/* 今日数据：完成歌曲数按「当天练过的不同曲目」，练习时长按每首 3 分钟折算 */
+function todayStat(){
+  var played = {}, times = 0;
+  for (var k = 0; k < state.logs.length; k++){
+    if (state.logs[k].d === TODAY){ played[state.logs[k].id] = 1; times++; }
+  }
+  var songs = 0; for (var id in played) if (played[id]) songs++;
+  return { songs: songs, times: times, minutes: times * 3,
+           goal: state.dailyGoal || 5, streak: statsSummary().streak };
+}
+var calMonth = '';   /* '' = 跟随今天；否则 'YYYY-MM' */
+function calHTML(){
+  var base = calMonth || TODAY.slice(0, 7);
+  var y = +base.slice(0, 4), mo = +base.slice(5, 7);
+  var lead = new Date(y, mo - 1, 1).getDay();
+  var days = new Date(y, mo, 0).getDate();
+  var prev = new Date(y, mo - 1, 0).getDate();
+  var mark = {};
+  for (var k = 0; k < state.logs.length; k++) mark[state.logs[k].d] = 1;
+  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+  var h = '<div class="wk">' + ['日','一','二','三','四','五','六'].map(function(w){ return '<span>' + w + '</span>'; }).join('') + '</div>';
+  h += '<div class="gd">';
+  for (var i = 0; i < 42; i++){
+    var dd, cls = '';
+    if (i < lead){ dd = prev - lead + i + 1; cls = 'out'; }
+    else if (i < lead + days){ dd = i - lead + 1; }
+    else { dd = i - lead - days + 1; cls = 'out'; }
+    if (!cls){
+      var ds = y + '-' + pad(mo) + '-' + pad(dd);
+      if (ds === TODAY) cls = 'today';
+      else if (mark[ds]) cls = 'done';
+    }
+    h += '<span class="' + cls + '"><b>' + dd + '</b></span>';
+  }
+  h += '</div><div class="lg"><span><i style="background:#FF8234"></i>已练习</span>'
+     + '<span><i style="background:#fff;border:1px solid #E6E0D8"></i>未练习</span></div>';
+  return h;
+}
+function renderRail(){
+  var t = todayStat(), C = 2 * Math.PI * 60;
+  var pct = t.goal > 0 ? Math.min(1, t.songs / t.goal) : 0;
+  var fg = el('ringFg');
+  fg.setAttribute('stroke-dasharray', C.toFixed(1));
+  fg.setAttribute('stroke-dashoffset', (C * (1 - pct)).toFixed(1));
+  el('ringV').textContent = t.songs;
+  el('ringG').textContent = t.goal;
+  el('stTime').textContent = t.minutes + ' 分钟';
+  el('stSong').textContent = t.songs + ' 首';
+  el('stStreak').textContent = t.streak + ' 天';
+  var base = calMonth || TODAY.slice(0, 7);
+  el('calNav').textContent = (+base.slice(0,4)) + '年' + (+base.slice(5,7)) + '月  ›';
+  setHTML('calBody', calHTML());
+}
+function renderLearning(){
+  var list = learningList();
+  el('learn-count').textContent = list.length;
+  if (!list.length){
+    setHTML('learn-body', emptyHTML('「新学」里还没有曲目。新加的谱子会自动进这里，也可以点下面按钮从已有曲库挑几首。', 'add-learning', '＋ 从曲库添加曲谱'));
+    return;
+  }
+  setHTML('learn-body', list.map(learnRowHTML).join(''));
+}
+var dlSel = {};
+function dlCount(){ var n = 0; for (var k in dlSel) if (dlSel[k]) n++; return n; }
+function dlList(){
+  var q = el('q-dl').value.trim();
+  return SONGS.filter(function(s){ return !q || s.t.indexOf(q) >= 0 || s.a.indexOf(q) >= 0; });
+}
+function renderDownload(){
+  var list = dlList();
+  el('dl-count').textContent = '筛选出 ' + list.length + ' 首 / 全库 ' + SONGS.length + ' 首';
+  el('dl-sel').textContent = '已选 ' + dlCount() + ' 首';
+  setHTML('dl-list', list.map(function(s){
+    return '<div class="dlrow"><span class="box' + (dlSel[s.i] ? ' on' : '') + '" data-dl="' + s.i + '"></span>'
+      + '<img loading="lazy" src="assets/covers/' + s.i + '.jpg" alt="">'
+      + '<b>' + esc(s.t) + '</b><span>' + esc(s.a) + '</span></div>';
+  }).join(''));
+}
+function dlDownload(){
+  var ids = [];
+  for (var k in dlSel) if (dlSel[k]) ids.push(+k);
+  if (!ids.length){ toast('先勾选要下载的曲目'); return; }
+  if (ids.length > 24 && !confirm('一次下载 ' + ids.length + ' 份谱面图，浏览器可能拦截。确定继续？')) return;
+  toast('开始下载 ' + ids.length + ' 份谱面…');
+  ids.forEach(function(id, n){
+    setTimeout(function(){
+      var a = document.createElement('a');
+      a.href = 'assets/tabs/' + id + '.jpg';
+      a.download = byId(id) ? byId(id).t + '.jpg' : (id + '.jpg');
+      document.body.appendChild(a); a.click(); a.remove();
+    }, 260 + n * 260);
+  });
+}
+
+/* ---------- 渲染层：曲库 ---------- */
+var libShown = 24;
+var libMode = 'list';   // 'list' 一行一首 | 'grid' 大卡片
+
+/* 筛选控件清单：所有「会悄悄把结果过滤成 0」的开关都登记在这里 */
+var FILTER_IDS = ['f-artist','f-genre','f-cat','f-level','f-status'];
+var FILTER_LABEL = {'f-artist':'歌手','f-genre':'曲风','f-cat':'类别','f-level':'难度','f-status':'状态'};
+var PRESET_LABEL = {fav:'只看收藏', learning:'只看新学', known:'只看已学会', stale:'只看很久没弹'};
+
+/* 清空筛选：keepId 为要保留的那一个控件（不传则全部清空，含搜索词与标签） */
+function clearLibFilters(keepId){
+  FILTER_IDS.forEach(function(id){ if (id !== keepId) el(id).value = ''; });
+  if (keepId !== 'q-lib') el('q-lib').value = '';
+  if (keepId !== '@tag') libTag = '';
+  if (keepId !== '@preset') libPreset = '';
+  libShown = 24;
+}
+/* 只看这一位歌手：其它条件与搜索词一律让开，避免点进去被残留筛选挡住 */
+function onlyArtist(name){
+  clearLibFilters('f-artist');
+  el('f-artist').value = name;
+  showView('lib','');
+  var n = SONGS.filter(function(s){ return s.a === name; }).length;
+  toast('只看「' + name + '」· ' + n + ' 首');
+}
+/* 只看这一个标签（曲风 / 类别 / 难度 / 拍号）：优先落在对应下拉，落不下就走标签筛选 */
+function onlyTag(tag){
+  clearLibFilters();
+  var hit = '';
+  FILTER_IDS.forEach(function(id){
+    if (!hit && el(id).querySelector('option[value="' + cssEsc(tag) + '"]')) hit = id;
+  });
+  if (hit) el(hit).value = tag;
+  else libTag = tag;
+  showView('lib','');
+  toast('已按「' + tag + '」筛选 · ' + filterSongs(libOpts()).length + ' 首');
+}
+function cssEsc(v){ return String(v).replace(/["\\]/g, '\\$&'); }
+
+/* 当前生效的条件，用于常驻 chip 条与空结果提示 */
+function activeFilterChips(){
+  var out = [], q = el('q-lib').value.trim();
+  if (q) out.push({id:'q-lib', label:'搜索「' + q + '」'});
+  FILTER_IDS.forEach(function(id){
+    var v = el(id).value;
+    if (v) out.push({id:id, label:FILTER_LABEL[id] + '：' + v});
+  });
+  if (libTag) out.push({id:'@tag', label:'标签：' + libTag});
+  if (libPreset) out.push({id:'@preset', label:PRESET_LABEL[libPreset] || libPreset});
+  return out;
+}
+function libOpts(){
+  return {
+    q: el('q-lib').value, preset: libPreset, tag: libTag,
+    artist: el('f-artist').value, genre: el('f-genre').value,
+    cat: el('f-cat').value, level: el('f-level').value,
+    status: el('f-status').value, sort: el('f-sort').value
+  };
+}
+function renderLib(){
+  var all = filterSongs(libOpts());
+  el('lib-count').textContent = all.length;
+  paintLibChips(all.length);
+  // 预设提示条（已被 chip 条覆盖，仅保留计数）
+  var wrap = el('lib-preset-wrap');
+  if (libPreset){
+    wrap.innerHTML = '<div class="preset">'+PRESET_LABEL[libPreset]+' · '+all.length+' 首'
+      + (libPreset === 'learning' ? '<button data-preset-add="1" class="preset-add">＋ 添加曲谱</button>' : '')
+      + '<button data-clearpreset="1" title="清除">×</button></div>';
+  } else wrap.innerHTML = '';
+  var page = all.slice(0, libShown);
+  el('lib-grid').className = (libMode === 'grid') ? 'grid3' : 'lib-list';
+  if (page.length){
+    setHTML('lib-grid', page.map(libMode === 'grid' ? cardHTML : libRowHTML).join(''));
+  } else {
+    var chips = activeFilterChips();
+    setHTML('lib-grid', chips.length
+      ? emptyHTML('没有符合条件的曲目。<br>当前条件：' + chips.map(function(c){ return esc(c.label); }).join(' · '), 'clear-filters', '清除全部筛选条件')
+      : emptyHTML('曲库里还没有谱子。'));
+  }
+  el('lib-more-wrap').hidden = all.length <= libShown;
+  el('lib-more').textContent = '加载更多（还有 '+(all.length-libShown)+' 首）';
+}
+function setLibMode(m){
+  if (libMode === m) return;
+  libMode = m;
+  libShown = 24;
+  el('vt-list').classList.toggle('on', m === 'list');
+  el('vt-grid').classList.toggle('on', m === 'grid');
+  renderLib();
+}
+var libPreset = '';
+var libTag = '';
+
+/* 当前筛选 chip 条：renderLib 的视图内子步骤（paint* 为渲染辅助，不参与 renderer 互调） */
+function paintLibChips(count){
+  var box = el('lib-chips');
+  var chips = activeFilterChips();
+  if (!chips.length){ box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  box.innerHTML = '<span class="chips-l">当前筛选（' + count + ' 首）：</span>'
+    + chips.map(function(c){
+        return '<button class="chip" data-chip="' + c.id + '" title="点一下撤掉这条">'
+          + esc(c.label) + '<i>×</i></button>';
+      }).join('')
+    + '<button class="chip clear" data-chip="__all">清除全部</button>';
+}
+
+/* 任一筛选控件变化。
+   搜索框是重点：如果「关键词 + 现有筛选」搜不到东西、而「只按关键词」能搜到，
+   说明是残留筛选在挡路，就自动把筛选放开（并提示一句），避免「库里有却搜不到」的假死。
+   关键词本身也搜不到时保持原筛选不动，不做多余的干扰。 */
+function onLibControl(id){
+  if (id === 'q-lib'){
+    var q = el('q-lib').value.trim();
+    if (q && filterSongs(libOpts()).length === 0){
+      var savedIds = FILTER_IDS.slice();
+      var savedVals = savedIds.map(function(f){ return el(f).value; });
+      var savedPreset = libPreset, savedTag = libTag;
+      savedIds.forEach(function(f){ el(f).value = ''; });
+      libPreset = ''; libTag = '';
+      var bare = filterSongs(libOpts()).length;
+      if (bare > 0){
+        toast('「' + q + '」能搜到 ' + bare + ' 首，已自动放开筛选条件');
+      } else {
+        savedIds.forEach(function(f, k){ el(f).value = savedVals[k]; });
+        libPreset = savedPreset; libTag = savedTag;
+      }
+    }
+  }
+  libShown = 24;
+  renderLib();
+}
+
+/* ---------- 搜索联想：输入即动态显示相关歌手 / 曲目（纯计算 + 视图，不参与 renderer 互调） ---------- */
+function searchMatches(q){
+  q = (q || '').trim().toLowerCase();
+  if (!q) return null;
+  var songs = SONGS.filter(function(s){
+    return s.t.toLowerCase().indexOf(q) >= 0 || s.a.toLowerCase().indexOf(q) >= 0;
+  });
+  var amap = {};
+  songs.forEach(function(s){ if (s.a.toLowerCase().indexOf(q) >= 0) amap[s.a] = (amap[s.a] || 0) + 1; });
+  var artists = Object.keys(amap).map(function(a){ return { a: a, n: amap[a] }; })
+    .sort(function(x, y){ return y.n - x.n || x.a.localeCompare(y.a, 'zh'); }).slice(0, 6);
+  return { songs: songs.slice(0, 8), artists: artists, total: songs.length };
+}
+var sugInput = null, sugItems = [], sugIdx = -1;
+function closeSug(){
+  var b = el('sugbox'); if (!b || b.hidden) return;
+  b.hidden = true; b.innerHTML = ''; sugItems = []; sugIdx = -1; sugInput = null;
+}
+function positionSug(input){
+  var box = el('sugbox'), r = input.getBoundingClientRect();
+  box.style.left = r.left + 'px';
+  box.style.width = r.width + 'px';
+  box.style.top = (r.bottom + 6) + 'px';
+}
+function paintSugSel(){
+  sugItems.forEach(function(it, k){ it.classList.toggle('on', k === sugIdx); });
+  if (sugIdx >= 0 && sugItems[sugIdx]) sugItems[sugIdx].scrollIntoView({ block: 'nearest' });
+}
+function renderSug(input){
+  var m = searchMatches(input.value);
+  if (!m){ closeSug(); return; }
+  var html = '';
+  if (m.artists.length){
+    html += '<div class="sg-h">歌手</div>';
+    m.artists.forEach(function(x){
+      html += '<div class="sg-i" data-sg="a" data-v="' + esc(x.a) + '"><span class="sg-t">' + esc(x.a) + '</span><span class="sg-n">' + x.n + ' 首</span></div>';
+    });
+  }
+  if (m.songs.length){
+    html += '<div class="sg-h">相关曲目' + (m.total > m.songs.length ? '（共 ' + m.total + ' 首）' : '') + '</div>';
+    m.songs.forEach(function(s){
+      html += '<div class="sg-i" data-sg="s" data-v="' + s.i + '"><span class="sg-t">' + esc(s.t) + '</span><span class="sg-n">' + esc(s.a) + '</span></div>';
+    });
+  }
+  if (!html) html = '<div class="sg-empty">没有匹配「' + esc(input.value.trim()) + '」的歌手或曲目</div>';
+  var box = el('sugbox');
+  box.innerHTML = html;
+  sugItems = Array.prototype.slice.call(box.querySelectorAll('.sg-i'));
+  sugIdx = -1; sugInput = input;
+  positionSug(input);
+  box.hidden = false;
+}
+function activateSug(it){
+  if (!it) return;
+  var kind = it.dataset.sg, v = it.dataset.v;
+  closeSug();
+  if (kind === 'a') onlyArtist(v);
+  else if (kind === 's') openDetail(+v);
+}
+/* 回车：有联想项就选中它并跳转；返回 true 表示这次回车已被消费 */
+function sugEnter(input){
+  if (el('sugbox').hidden || !sugItems.length) return false;
+  activateSug(sugItems[sugIdx >= 0 ? sugIdx : 0]);
+  input.value = '';
+  return true;
+}
+
+/* ---------- 从已有曲库添加曲谱到「新学」 ---------- */
+var pickSel = {};
+function openPicker(){
+  pickSel = {};
+  el('pk-q').value = '';
+  el('pick').hidden = false;
+  renderPick();
+  setTimeout(function(){ try{ el('pk-q').focus(); }catch(e){} }, 30);
+}
+function closePicker(){
+  el('pick').hidden = true;
+  el('pk-list').innerHTML = '';
+  el('pk-q').value = '';
+  pickSel = {};
+}
+function pickCandidates(){
+  var q = el('pk-q').value.trim().toLowerCase();
+  if (!q) return SONGS.slice();
+  return SONGS.filter(function(s){
+    return s.t.toLowerCase().indexOf(q) >= 0 || s.a.toLowerCase().indexOf(q) >= 0;
+  });
+}
+function pickCount(){ var n = 0; for (var k in pickSel) if (pickSel[k]) n++; return n; }
+function paintPickCount(){
+  var n = pickCount();
+  el('pk-sel').textContent = '已选 ' + n + ' 首';
+  el('pk-ok').textContent = n ? ('添加 ' + n + ' 首到新学') : '添加到新学';
+  el('pk-ok').disabled = n === 0;
+}
+function renderPick(){
+  var inLearn = {};
+  learningList().forEach(function(s){ inLearn[s.i] = 1; });
+  var list = pickCandidates();
+  if (!list.length){ setHTML('pk-list', '<div class="empty">没有找到匹配的曲目。</div>'); paintPickCount(); return; }
+  setHTML('pk-list', list.map(function(s){
+    var done = !!inLearn[s.i], on = !!pickSel[s.i];
+    return '<div class="pk-row' + (done ? ' done' : (on ? ' on' : '')) + '" data-pk="' + s.i + '">'
+      + '<span class="box"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></svg></span>'
+      + '<span class="pt"><b>' + esc(s.t) + '</b><span>' + esc(s.a) + (done ? ' · 已在学' : '') + '</span></span>'
+      + '</div>';
+  }).join(''));
+  paintPickCount();
+}
+function togglePick(i){
+  if (statusOf(i) === 'learning'){ toast('《' + byId(i).t + '》已经在「新学」里了'); return; }
+  if (pickSel[i]) delete pickSel[i]; else pickSel[i] = 1;
+  var row = el('pk-list').querySelector('.pk-row[data-pk="' + i + '"]');
+  if (row) row.classList.toggle('on', !!pickSel[i]);
+  paintPickCount();
+}
+function confirmPick(){
+  var ids = Object.keys(pickSel).filter(function(k){ return pickSel[k]; });
+  if (!ids.length){ toast('还没有勾选曲目'); return; }
+  ids.forEach(function(k){ state.status[k] = 'learning'; });
+  saveState();
+  closePicker();
+  refreshAll();
+  toast('已把 ' + ids.length + ' 首加入「新学」');
+}
+
+/* ---------- 渲染层：收藏 ---------- */
+function renderFav(){
+  var list = favList();
+  el('fav-count').textContent = list.length;
+  setHTML('fav-grid', list.length ? list.map(cardHTML).join('')
+    : emptyHTML('还没有收藏。在谱面页点右上角「收藏」，或在卡片上点「···」加入收藏。', 'go-lib', '去我的曲谱 →'));
+}
+
+/* ---------- 渲染层：练习记录 ---------- */
+function renderLog(){
+  var st = statsSummary();
+  el('st-total').textContent = st.total;
+  el('st-streak').textContent = st.streak;
+  el('st-month').textContent = st.month;
+  // 近 35 天热力图（内联 SVG）
+  var cell=17, gap=5, cols=7, rows=5;
+  var counts = {};
+  state.logs.forEach(function(l){ counts[l.d] = (counts[l.d]||0)+1; });
+  var start = new Date(TODAY+'T00:00:00'); start.setDate(start.getDate() - 34);
+  var svg = '<svg width="'+(cols*(cell+gap)-gap)+'" height="'+(rows*(cell+gap)-gap+16)+'" viewBox="0 0 '+(cols*(cell+gap)-gap)+' '+(rows*(cell+gap)-gap+16)+'">';
+  for (var r=0;r<rows;r++){
+    for (var c=0;c<cols;c++){
+      var d = new Date(start); d.setDate(start.getDate() + r*cols + c);
+      var ds = ymd(d), n = counts[ds]||0;
+      var fill = n===0 ? '#F1EDE7' : n===1 ? '#FFD9BC' : n<=3 ? '#FFB183' : '#FF6422';
+      var x = c*(cell+gap), y = r*(cell+gap);
+      svg += '<rect x="'+x+'" y="'+y+'" width="'+cell+'" height="'+cell+'" rx="4" fill="'+fill+'"><title>'+ds+'：练习 '+(n*1)+' 次</title></rect>';
+    }
+  }
+  svg += '</svg>';
+  setHTML('heat-svg', svg);
+
+  if (!state.logs.length){
+    setHTML('log-list', emptyHTML('还没有练习记录。打开任意一份谱子，点右上角「完成本次练习」就会记一笔。', 'go-lib', '去挑一首 →'));
+    return;
+  }
+  var asc = state.logs.slice().sort(function(a,b){ return b.ts - a.ts; }).slice(0,80);
+  setHTML('log-list', asc.map(function(l){
+    var s = byId(l.id);
+    return '<div class="logrow"><div class="logdate">'+esc(l.d)+'</div>'
+      + '<div class="logmain"><b>'+esc(s?s.t:'未知曲目')+'</b><span>'+esc(s?s.a:'')+(l.n>1?' · 第 '+l.n+' 次':'')+'</span></div>'
+      + '<span class="lnk" data-open="'+l.id+'">打开谱面 ›</span></div>';
+  }).join(''));
+}
+
+/* ---------- 渲染层：标签 ---------- */
+function renderTags(){
+  var groups = [
+    {k:'g', name:'按曲风', hint:'谱面风格归类'},
+    {k:'c', name:'按类别', hint:'演唱语言'},
+    {k:'d', name:'按难度', hint:'综合和弦与节奏难度推断'},
+    {k:'ts', name:'按拍号', hint:'谱面标注的拍号'}
+  ];
+  setHTML('tag-groups', groups.map(function(gr){
+    var m = countBy(gr.k);
+    var keys = Object.keys(m).sort(function(a,b){ return m[b]-m[a]; });
+    return '<div class="tagbox"><h3>'+gr.name+'<span>'+gr.hint+'</span></h3><div class="tagcloud">'
+      + keys.map(function(k){ return '<button data-tag="'+esc(k)+'">'+esc(k)+'<i>'+m[k]+'</i></button>'; }).join('')
+      + '</div></div>';
+  }).join(''));
+}
+
+function renderArtists(){
+  var m = countBy('a');
+  var keys = Object.keys(m).sort(function(a, b){
+    return (m[b] - m[a]) || String(a).localeCompare(String(b), 'zh');
+  });
+  setHTML('artist-grid', keys.map(function(k){
+    return '<button class="artist" data-artist="' + esc(k) + '">' + avHtml(k)
+      + '<span class="an">' + esc(k) + '</span><span class="ac">' + m[k] + ' 首</span></button>';
+  }).join(''));
+}
+
+/* ---------- 歌手页：先列歌手 → 点进去看该歌手的曲目（两级，都在本页内切换） ---------- */
+var arPick = '';        /* 当前选中的歌手，空串=还在歌手列表 */
+var arBackTo = 'home';  /* 「返回」回到哪个页：home / tools */
+var arQ = '';           /* 歌手页顶部搜索词 */
+function artistList(){
+  var m = countBy('a');
+  return Object.keys(m).sort(function(a, b){
+    return (m[b] - m[a]) || String(a).localeCompare(String(b), 'zh');
+  }).map(function(k){ return { a: k, n: m[k] }; });
+}
+/* 按歌手名过滤（不区分大小写；兼容「BEYOND / beyond」这类英文名） */
+function filterArtists(q){
+  var all = artistList();
+  if(!q) return all;
+  var s = q.toLowerCase();
+  return all.filter(function(r){ return String(r.a).toLowerCase().indexOf(s) >= 0; });
+}
+function renderArtistPage(){
+  var back = el('arBack');
+  if (arPick){
+    var list = SONGS.filter(function(s){ return s.a === arPick; });
+    el('arHav').innerHTML = avHtml(arPick);
+    el('arHav').hidden = false;
+    el('arTitle').textContent = arPick;
+    el('arSub').textContent = '这位歌手的 ' + list.length + ' 首谱子，点任意一首打开';
+    el('arStat').textContent = '共 ' + list.length + ' 首';
+    el('arSearch').hidden = true;                 /* 看具体曲目时搜索框无意义，收起 */
+    setHTML('arSongs', list.length
+      ? list.slice().sort(function(x, y){ return x.t.localeCompare(y.t, 'zh'); }).map(rowCardHTML).join('')
+      : '<div class="empty">这位歌手名下暂时还没有曲谱</div>');
+    el('arGrid').hidden = true;
+    el('arSongs').hidden = false;
+    back.textContent = '‹ 返回歌手';
+  } else {
+    var rows = filterArtists(arQ);
+    var songs = 0;
+    rows.forEach(function(r){ songs += r.n; });
+    el('arHav').hidden = true;
+    el('arHav').innerHTML = '';
+    el('arTitle').textContent = '按歌手找';
+    el('arSub').textContent = arQ
+      ? '匹配「' + arQ + '」的 ' + rows.length + ' 位歌手'
+      : '选择一位歌手，再进入对应曲目';
+    el('arStat').textContent = arQ
+      ? (rows.length ? '命中 ' + rows.length + ' 位 · ' + songs + ' 首谱子' : '无匹配')
+      : (rows.length + ' 位歌手 · ' + SONGS.length + ' 首谱子');
+    el('arSearch').hidden = false;
+    if(rows.length){
+      setHTML('arGrid', rows.map(function(r){
+        return '<button class="arow" data-ar="' + esc(r.a) + '">' + avHtml(r.a)
+          + '<span class="artx"><b>' + esc(r.a) + '</b><i>' + r.n + ' 首曲目</i></span>'
+          + '<span class="argo">›</span></button>';
+      }).join(''));
+    } else {
+      /* 搜不到歌手时，顺手看看有没有同名曲目的谱子，给条出路 */
+      var bySong = SONGS.filter(function(s){ return String(s.t).toLowerCase().indexOf(arQ.toLowerCase()) >= 0; });
+      setHTML('arGrid', '<div class="empty ar-empty">没有匹配「' + esc(arQ) + '」的歌手'
+        + (bySong.length ? '<span>，但曲库里有 <b>' + bySong.length + '</b> 首同名谱子</span>' : '')
+        + '<div class="row"><button class="btn-line" data-argolib="1">在曲库搜「' + esc(arQ) + '」</button>'
+        + '<button class="btn-line" data-arclear="1">清空搜索</button></div></div>');
+    }
+    el('arGrid').hidden = false;
+    el('arSongs').hidden = true;
+    back.textContent = (arBackTo === 'tools' ? '‹ 返回功能' : '‹ 返回首页');
+  }
+}
+function openArtist(name){
+  arPick = name;
+  renderArtistPage();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function searchArtists(q){
+  arQ = q;
+  if (arPick) arPick = '';                        /* 搜索时自动回到歌手列表 */
+  renderArtistPage();
+}
+
+/* ---------- 渲染层：功能页 ---------- */
+function renderTools(){
+  /* 我的标签：类别 + 曲风，点即筛选 */
+  var defs = [];
+  distinct('c').slice(0,2).forEach(function(v){ defs.push({k:'cat', v:v}); });
+  distinct('g').slice(0,3).forEach(function(v){ defs.push({k:'genre', v:v}); });
+  setHTML('tool-tags', defs.map(function(d){
+    return '<button data-tagkind="'+d.k+'" data-tagval="'+esc(d.v)+'">'+esc(d.v)+'</button>';
+  }).join('') + '<button class="add" id="tag-add" title="管理标签">＋</button>');
+  /* 常用歌手：按曲目数排序 */
+  var m = countBy('a'), keys = Object.keys(m);
+  keys.sort(function(a,b){ return (m[b]-m[a]) || a.localeCompare(b,'zh'); });
+  setHTML('tool-artists', keys.slice(0,26).map(function(k){
+    return '<button class="artist" data-artist="'+esc(k)+'">'+avHtml(k)
+      + '<span class="an">'+esc(k)+'</span></button>';
+  }).join(''));
+}
+
+/* ---------- 渲染层：设置页 ---------- */
+function renderSettings(){
+  var st = statsSummary();
+  el('t-summary').innerHTML = ''
+    + '<span class="kv"><span>谱库曲目</span><b>'+SONGS.length+' 首</b></span>'
+    + '<span class="kv"><span>新学</span><b>'+learningList().length+' 首</b></span>'
+    + '<span class="kv"><span>已学会</span><b>'+knownList().length+' 首</b></span>'
+    + '<span class="kv"><span>收藏</span><b>'+favList().length+' 首</b></span>'
+    + '<span class="kv"><span>已练过曲目 / 练习总次数</span><b>'+st.played+' 首 / '+st.total+' 次</b></span>'
+    + '<span class="kv"><span>有记录的天数</span><b>'+st.days+' 天</b></span>';
+  el('t-source').innerHTML = ''
+    + '<span class="kv"><span>扫描目录</span><b>D:\\桌面\\打包吉他谱</b></span>'
+    + '<span class="kv"><span>识别文件</span><b>'+SONGS.length+' 份（含 2 个子目录）</b></span>'
+    + '<span class="kv"><span>字段来源</span><b>谱面头部 + 文件名</b></span>'
+    + '<span class="kv"><span>未识别字段</span><b>'+UNKNOWN_REAL+' 项</b></span>'
+    + '<span class="kv"><span>已推断 / 需确认</span><b>'+UNKNOWN.length+' 项</b></span>';
+  var a = artStats();
+  el('t-art').innerHTML = ''
+    + '<span class="kv"><span>自定义封面</span><b>'+a.cn+' 张</b></span>'
+    + '<span class="kv"><span>自定义头像</span><b>'+a.an+' 个</b></span>'
+    + '<span class="kv"><span>占用本机存储</span><b>约 '+a.kb+' KB</b></span>';
+}
+function showReport(){
+  if (!UNKNOWN.length){ toast('所有字段均已识别'); return; }
+  var lines = UNKNOWN.map(function(u){
+    return '· [' + u.type + '] ' + u.file + ' 【' + u.field + '】= ' + u.value + '\n    ' + u.note;
+  }).join('\n');
+  alert('未识别 / 已推断 / 需人工确认清单（共 ' + UNKNOWN.length + ' 项）\n\n' + lines);
+}
+
+/* ---------- 详情页 ---------- */
+var cur = null, zoom = 0, cw = 0; // zoom: 0=适应宽度；>0 表示相对原图像素的百分比
+var ZOOM_MIN = 20, ZOOM_MAX = 1200; // 缩放范围（%），以原图自然像素为 100%
+function openDetail(i){
+  var s = byId(i); if (!s) return;
+  cur = i;
+  state.seen[i] = (state.seen[i]||0)+1;
+  el('dt-title').textContent = s.t;
+  el('dt-subwrap').innerHTML = avHtml(s.a)
+    + '<span id="dt-sub">' + esc(s.a) + ' · 原始文件 ' + esc(s.f) + '</span>';
+  el('dt-cover').src = coverSrc(i);
+  el('dt-cover').alt = s.t + ' 封面';
+  el('dt-img').onload = function(){ if (!el('detail').hidden) applyZoom(); };
+  el('dt-img').src = 'assets/tabs/'+i+'.jpg' + (i === 156 ? '?v=original-20261021' : '');
+  el('dt-img').alt = s.t + ' 吉他谱';
+  el('dt-status').value = statusOf(i);
+  syncDtKnown();
+  el('dt-fav').classList.toggle('on', isFav(i));
+  el('dt-fav-t').textContent = isFav(i) ? '已收藏' : '收藏';
+  // 适应宽度
+  zoom = 0;
+  el('detail').hidden = false;
+  document.body.style.overflow = 'hidden';
+  applyZoom();
+  el('dt-canvas').scrollTop = 0; el('dt-canvas').scrollLeft = 0;
+  saveState();
+}
+function closeDetail(){
+  el('detail').hidden = true;
+  document.body.style.overflow = '';
+  el('dt-img').src = '';
+  cur = null;
+  refreshAll();
+}
+/* 「我学会了」按钮态：已学会 → 变绿并提示可撤回；未学会 → 常规范式 */
+function syncDtKnown(){
+  var b = el('dt-known');
+  if (!b || cur === null) return;
+  var on = statusOf(cur) === 'known';
+  b.classList.toggle('on', on);
+  el('dt-known-t').textContent = on ? '已学会' : '我学会了';
+  b.title = on ? '点一下撤回，回到「新学」' : '标记已学会，移出「新学」';
+}
+/* 缩放滑块：滑块位置(0–1000) ↔ 缩放比例(%)
+   20%–1200% 跨了两个数量级，线性刻度会把 80%–150% 这段常用区间挤成一团，
+   所以改用对数刻度：滑块正中 = 100%（原图 1:1），往左缩、往右放，两头都留足行程。 */
+function sliderToPct(t){
+  t = Math.max(0, Math.min(1000, t));
+  if (t <= 500) return ZOOM_MIN * Math.pow(100 / ZOOM_MIN, t / 500);
+  return 100 * Math.pow(ZOOM_MAX / 100, (t - 500) / 500);
+}
+function pctToSlider(p){
+  p = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, p));
+  if (p <= 100) return 500 * Math.log(p / ZOOM_MIN) / Math.log(100 / ZOOM_MIN);
+  return 500 + 500 * Math.log(p / 100) / Math.log(ZOOM_MAX / 100);
+}
+function applyZoom(){
+  var img = el('dt-img'), box = el('dt-canvas');
+  var avail = Math.max(80, box.clientWidth - 14);
+  var nat = img.naturalWidth || 0;              // 原图自然像素宽，作为 100% 基准
+  var w;
+  if (zoom === 0 || !nat){                      // 0 = 适应宽度（图片未加载时也先按适宽显示）
+    w = avail;
+    el('dt-zval').textContent = nat ? (Math.round(avail / nat * 100) + '%') : '适宽';
+  } else {
+    w = Math.max(40, Math.round(nat * zoom / 100));
+    el('dt-zval').textContent = Math.round(zoom) + '%';
+  }
+  img.style.width = w + 'px';
+  img.style.maxWidth = 'none';
+  var fb = document.querySelector('.dt-zoom button[data-z="fit"]');
+  if (fb) fb.classList.toggle('act', zoom === 0);
+  /* 滑块跟随当前比例：任何入口（按钮 / 快捷键 / 输入比例 / 适宽）改动后都自动归位 */
+  var eff = (zoom === 0) ? (nat ? avail / nat * 100 : 100) : zoom;
+  var sl = el('dt-zslider');
+  if (sl) sl.value = Math.round(pctToSlider(eff));
+}
+/* 适应宽度时对应的比例（相对原图像素），供从「适应」直接放大时做起点 */
+function fitZoomPercent(){
+  var img = el('dt-img'), box = el('dt-canvas');
+  var nat = img.naturalWidth || 0;
+  if (!nat) return 100;
+  return Math.max(80, box.clientWidth - 14) / nat * 100;
+}
+/* dir: +1 放大 / -1 缩小；步长随倍率自适应，方便一路拉到很大比例 */
+function stepZoom(dir){
+  if (zoom === 0) zoom = fitZoomPercent();
+  var s = zoom >= 400 ? 100 : (zoom >= 150 ? 50 : (zoom >= 80 ? 25 : 10));
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + dir * s));
+  applyZoom();
+}
+/* 点击百分比：直接输入任意比例（不同屏幕大小都够用） */
+function setZoomPercent(v){
+  var n = parseFloat(String(v).replace(/[^\d.\-]/g, ''));
+  if (!isFinite(n)){ toast('请输入数字比例，例如 150'); return; }
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, n));
+  applyZoom();
+}
+function toggleFav(){
+  if (cur===null) return;
+  if (isFav(cur)){ delete state.fav[cur]; toast('已取消收藏'); }
+  else { state.fav[cur] = 1; toast('已加入收藏'); }
+  el('dt-fav').classList.toggle('on', isFav(cur));
+  el('dt-fav-t').textContent = isFav(cur) ? '已收藏' : '收藏';
+  saveState();
+}
+/* 记一次练习：详情页与列表行内共用这一份逻辑。
+   注意：练习/「练过」不会把曲目塞进「新学」——那里只放新加入曲库的谱子 + 用户主动加入的曲目。 */
+function logPractice(i){
+  if (i === null || i === undefined || !byId(i)) return 0;
+  state.plays[i] = playsOf(i)+1;
+  state.last[i] = TODAY;
+  state.logs.push({ d: TODAY, id: i, ts: Date.now(), n: state.plays[i] });
+  saveState();
+  return state.plays[i];
+}
+/* 详情页「完成本次练习」：记一笔 → 关闭谱面 → 回到首页（复习完自动回列表） */
+function doPractice(){
+  if (cur===null) return;
+  var s = byId(cur), n = logPractice(cur);
+  toast('已记录：'+s.t+' · 累计 '+n+' 次');
+  closeDetail();
+  showView('home','');
+}
+/* 列表行内一键「练过」：不打开谱面也能记一次练习 */
+function quickPractice(i){
+  var s = byId(i);
+  if (!s) return;
+  var n = logPractice(i);
+  toast('已记录「'+s.t+'」· 累计 '+n+' 次');
+  refreshAll();
+}
+function navDetail(dir){
+  if (cur===null) return;
+  var n = cur + dir;
+  if (n < 0) n = SONGS.length-1;
+  if (n >= SONGS.length) n = 0;
+  openDetail(n);
+}
+
+/* ---------- 菜单 ---------- */
+var menuEl = null;
+function closeMenu(){ if (menuEl){ menuEl.remove(); menuEl = null; } }
+function openMenu(id, x, y){
+  closeMenu();
+  var s = byId(id);
+  var m = document.createElement('div');
+  m.className = 'menu';
+  m.innerHTML =
+      '<button data-mi="open" data-i="'+id+'">打开谱面</button>'
+    + '<button data-mi="fav" data-i="'+id+'">'+(isFav(id)?'取消收藏':'加入收藏')+'</button>'
+    + '<button data-mi="known" data-i="'+id+'">标记「我学会了」</button>'
+    + '<button data-mi="learning" data-i="'+id+'">加入「新学」</button>'
+    + '<button data-mi="new" data-i="'+id+'">重置为未练习</button>'
+    + '<button data-mi="cover" data-i="'+id+'">更换专辑封面</button>'
+    + '<button data-mi="avatar" data-i="'+id+'">更换歌手头像</button>';
+  document.body.appendChild(m);
+  var w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.min(x, innerWidth-w-10) + 'px';
+  m.style.top  = Math.min(y, innerHeight-h-10) + 'px';
+  menuEl = m;
+}
+
+/* ---------- 导航 ---------- */
+var view = 'home';
+function showView(v, preset){
+  view = v;
+  closeSug();                                   /* 切页面时收起搜索联想 */
+  if (preset !== undefined) libPreset = preset || '';
+  document.querySelectorAll('.nav button').forEach(function(b){ b.classList.toggle('on', b.dataset.view === v); });
+  document.querySelectorAll('.view').forEach(function(s){ s.classList.toggle('on', s.id === 'v-'+v); });
+  el('main').classList.toggle('no-rail', v !== 'home');   /* 右栏只在「发现」页出现 */
+  refreshAll();
+  window.scrollTo({ top: 0 });
+}
+/* 统一刷新入口：所有联动都走这里，渲染函数之间互不调用 */
+function refreshAll(){
+  if (view === 'home'){ renderHome(); renderRail(); }
+  if (view === 'lib')   renderLib();
+  if (view === 'fav')   renderFav();
+  if (view === 'log')   renderLog();
+  if (view === 'learning') renderLearning();
+  if (view === 'download') renderDownload();
+  if (view === 'tags'){ renderTags(); renderArtists(); }
+  if (view === 'artists') renderArtistPage();
+  if (view === 'tools') renderTools();
+  if (view === 'settings') renderSettings();
+  renderBadge();
+}
+function renderBadge(){
+  var n = reviewPool().length;
+  var b = el('fabBadge');
+  b.textContent = n > 99 ? '99+' : n;
+  b.hidden = n === 0;
+}
+
+/* ---------- 事件绑定 ---------- */
+function bind(){
+  /* 导航 */
+  el('nav').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-view]'); if (!b) return;
+    if (b.dataset.view === 'artists'){ arPick = ''; arBackTo = 'home'; }
+    showView(b.dataset.view, '');
+  });
+  /* 首页搜索 */
+  el('q-home').addEventListener('keydown', function(e){
+    if (e.key !== 'Enter') return;
+    if (sugEnter(this)) return;                        /* 有联想项时直接跳该项 */
+    el('q-lib').value = this.value; this.value=''; showView('lib','');
+  });
+  /* 快捷卡 */
+  document.querySelector('.quick-grid').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-act]'); if (!b) return;
+    var act = b.dataset.act;
+    if (act === 'random'){ openDetail(SONGS[Math.floor(Math.random()*SONGS.length)].i); return; }
+    if (act === 'stale'){ showView('lib','stale'); toast('很久没弹：超过 30 天未练习的曲目'); return; }
+    if (act === 'known'){
+      if (!knownList().length){ toast('还没有「已学会」的曲目，在曲谱页点「我学会了」试试'); showView('lib',''); }
+      else showView('lib','known');
+      return;
+    }
+    if (act === 'learning'){
+      if (!learningList().length){ toast('「新学」里还没有曲目，先去加几首'); showView('lib',''); }
+      else showView('lib','learning');
+    }
+  });
+  el('btn-reshuffle').addEventListener('click', function(){
+    renderHomeReview(true);                       /* 手动换一组：强制重抽并锁定 */
+    toast('已换一组，今天就用这一组了');
+  });
+
+  /* ---- 新版首页：查看全部 / 添加曲谱 / 侧栏播放器 / 右栏 ---- */
+  el('lnk-learn-all').addEventListener('click', function(){ showView('learning',''); });
+  el('btn-add-learning2').addEventListener('click', openPicker);
+  el('lnk-learn-one').addEventListener('click', function(){
+    var l = learningList();
+    if (!l.length){ toast('「新学」里还没有曲目'); return; }
+    openDetail(l[Math.floor(Math.random()*l.length)].i);
+  });
+  el('heroFilter').addEventListener('click', function(){ showView('lib',''); });
+  /* 侧栏「随机一首」卡：整卡可点 = 随机播一首 */
+  function mpShuffle(){ openDetail(SONGS[Math.floor(Math.random()*SONGS.length)].i); }
+  var mpCardEl = el('mpCard');
+  mpCardEl.addEventListener('click', mpShuffle);
+  mpCardEl.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar'){ e.preventDefault(); mpShuffle(); }
+  });
+  el('railGo').addEventListener('click', function(){
+    if (homeReviewIds.length){ openDetail(homeReviewIds[0]); return; }
+    var l = learningList();
+    if (l.length) openDetail(l[0].i);
+    else toast('先去「新学」添加几首曲谱吧');
+  });
+  el('lnk-cal').addEventListener('click', function(){
+    var c = el('calBody');
+    if (c && c.scrollIntoView) c.scrollIntoView({ behavior:'smooth', block:'center' });
+  });
+  el('calNav').addEventListener('click', function(){
+    var base = calMonth || TODAY.slice(0, 7);
+    var y = +base.slice(0, 4), mo = +base.slice(5, 7) + 1;
+    if (mo > 12){ mo = 1; y++; }
+    calMonth = y + '-' + (mo < 10 ? '0' : '') + mo;
+    renderRail();
+    toast('已翻到 ' + y + '年' + mo + '月');
+  });
+
+  /* ---- 下载页 ---- */
+  el('q-dl').addEventListener('input', renderDownload);
+  el('dl-go').addEventListener('click', dlDownload);
+  el('dl-all').addEventListener('click', function(){
+    dlList().forEach(function(s){ dlSel[s.i] = 1; });
+    renderDownload();
+    toast('已选中当前筛选出的 ' + dlCount() + ' 首');
+  });
+  el('dl-none').addEventListener('click', function(){ dlSel = {}; renderDownload(); });
+
+  /* 新学：把已有曲谱加入「新学」 */
+  el('btn-add-learning').addEventListener('click', openPicker);
+  el('pk-close').addEventListener('click', closePicker);
+  el('pk-cancel').addEventListener('click', closePicker);
+  el('pk-ok').addEventListener('click', confirmPick);
+  el('pk-q').addEventListener('input', renderPick);
+  el('pick').addEventListener('click', function(e){ if (e.target === el('pick')) closePicker(); });   /* 点遮罩关闭 */
+  el('pk-list').addEventListener('click', function(e){
+    var row = e.target.closest('.pk-row[data-pk]'); if (!row) return;
+    togglePick(+row.dataset.pk);
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !el('pick').hidden) closePicker();
+  });
+
+  /* 主区委托：卡片、行卡、菜单、标签 */
+  document.querySelector('.main').addEventListener('click', function(e){
+    var t;
+    /* 行卡 / 大卡片外层都带 data-open，内层按钮（「我会了」「···」）必须先判断，
+       否则 closest('[data-open]') 会命中外层容器，按钮被"点击穿透"直接进谱面。 */
+    /* 行内快捷操作（收藏 / 正在学 / 我会了 / 一键练过）同样是内层按钮，必须排在 data-open 前 */
+    if ((t = e.target.closest('[data-dl]'))){
+      var di = +t.dataset.dl;
+      if (dlSel[di]) delete dlSel[di]; else dlSel[di] = 1;
+      renderDownload();
+      return;
+    }
+    if ((t = e.target.closest('[data-favq]'))){
+      var fi = +t.dataset.favq;
+      if (isFav(fi)){ delete state.fav[fi]; toast('已取消收藏：'+byId(fi).t); }
+      else { state.fav[fi] = 1; toast('已收藏：'+byId(fi).t); }
+      saveState(); refreshAll(); return;
+    }
+    if ((t = e.target.closest('[data-learnq]'))){
+      var li = +t.dataset.learnq;
+      if (statusOf(li) === 'learning'){ state.status[li] = 'new'; toast('已移出「新学」：'+byId(li).t); }
+      else { state.status[li] = 'learning'; toast('已加入「新学」：'+byId(li).t); }
+      saveState(); refreshAll(); return;
+    }
+    if ((t = e.target.closest('[data-known]'))){
+      var i = +t.dataset.known;
+      if (statusOf(i) === 'known'){ state.status[i] = 'new'; toast('已取消「我学会了」：'+byId(i).t); }
+      else { state.status[i] = 'known'; toast('已学会：'+byId(i).t+'，已移出「新学」'); }
+      saveState(); refreshAll(); return;
+    }
+    if ((t = e.target.closest('[data-pract]'))){
+      e.stopPropagation();
+      quickPractice(+t.dataset.pract); return;
+    }
+    if ((t = e.target.closest('[data-menu]'))){
+      e.stopPropagation();
+      var r = t.getBoundingClientRect();
+      openMenu(+t.dataset.menu, r.right - 158, r.bottom + 6); return;
+    }
+    if ((t = e.target.closest('[data-open]'))){ openDetail(+t.dataset.open); return; }
+    if ((t = e.target.closest('[data-emptyact]'))){
+      if (t.dataset.emptyact === 'go-lib') showView('lib','');
+      if (t.dataset.emptyact === 'clear-filters'){ clearLibFilters(); renderLib(); toast('已清除全部筛选条件'); }
+      if (t.dataset.emptyact === 'add-learning'){ openPicker(); }
+      return;
+    }
+    if ((t = e.target.closest('[data-arclear]'))){
+      el('q-ar').value = ''; searchArtists(''); return;
+    }
+    if ((t = e.target.closest('[data-argolib]'))){
+      el('q-lib').value = arQ; showView('lib',''); return;
+    }
+    if ((t = e.target.closest('[data-ar]'))){
+      openArtist(t.dataset.ar);
+      return;
+    }
+    if ((t = e.target.closest('[data-artist]'))){
+      onlyArtist(t.dataset.artist);
+      return;
+    }
+    if ((t = e.target.closest('[data-tag]'))){
+      onlyTag(t.dataset.tag);
+      return;
+    }
+    if ((t = e.target.closest('[data-preset-add]'))){ openPicker(); return; }
+    if ((t = e.target.closest('[data-clearpreset]'))){ libPreset=''; renderLib(); return; }
+  });
+
+  /* 菜单点击 */
+  document.addEventListener('click', function(e){
+    var t = e.target.closest('[data-mi]');
+    if (t){
+      var i = +t.dataset.i, mi = t.dataset.mi;
+      if (mi === 'open') openDetail(i);
+      else if (mi === 'fav'){ if (isFav(i)) delete state.fav[i]; else state.fav[i]=1; saveState(); toast(isFav(i)?'已收藏':'已取消收藏'); refreshAll(); }
+      else if (mi === 'known'){ state.status[i]='known'; saveState(); toast('已学会：'+byId(i).t+'，已移出「新学」'); refreshAll(); }
+      else if (mi === 'learning'){ state.status[i]='learning'; saveState(); toast('已加入「新学」'); refreshAll(); }
+      else if (mi === 'new'){ state.status[i]='new'; delete state.plays[i]; delete state.last[i]; saveState(); toast('已重置'); refreshAll(); }
+      else if (mi === 'cover'){ closeMenu(); pickCover(i); return; }
+      else if (mi === 'avatar'){ var ss = byId(i); closeMenu(); if (ss) pickAvatar(ss.a); return; }
+      closeMenu(); return;
+    }
+    if (menuEl && !e.target.closest('.menu')) closeMenu();
+  });
+
+  /* 曲库筛选 */
+  ['q-lib','f-artist','f-genre','f-cat','f-level','f-status','f-sort'].forEach(function(id){
+    el(id).addEventListener('input', function(){ onLibControl(id); });
+    el(id).addEventListener('change', function(){ onLibControl(id); });
+  });
+  /* chip 条：单条撤销 / 一键清除 */
+  el('lib-chips').addEventListener('click', function(e){
+    var b = e.target.closest('[data-chip]'); if (!b) return;
+    var id = b.dataset.chip;
+    if (id === '__all'){ clearLibFilters(); renderLib(); toast('已清除全部筛选条件'); return; }
+    if (id === '@tag'){ libTag = ''; libShown = 24; renderLib(); return; }
+    if (id === '@preset'){ libPreset = ''; libShown = 24; renderLib(); return; }
+    el(id).value = '';
+    libShown = 24; renderLib();
+  });
+  el('lib-more').addEventListener('click', function(){ libShown += 24; renderLib(); });
+  el('vt-list').addEventListener('click', function(){ setLibMode('list'); });
+  el('vt-grid').addEventListener('click', function(){ setLibMode('grid'); });
+
+  /* 功能页：入口卡片 */
+  el('tool-list').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-act]'); if (!b) return;
+    var act = b.dataset.act;
+    if (act === 'by-artist'){ arPick = ''; arBackTo = 'tools'; showView('artists',''); return; }
+    if (act === 'by-genre'){ showView('lib',''); toast('在「我的曲谱」页用「全部曲风」筛'); return; }
+    if (act === 'by-type'){ showView('lib',''); toast('在「我的曲谱」页按难度 / 类别筛'); return; }
+    if (act === 'by-status'){ showView('lib',''); toast('在「我的曲谱」页用「全部状态」筛'); return; }
+    if (act === 'smart'){
+      var p = reviewPool();
+      var q = p.length ? shuffle(p.slice()).slice(0,3) : shuffle(SONGS.slice()).slice(0,3);
+      if (!p.length) toast('练习记录还不多，先给你随机排了 3 首');
+      else toast('智能练习队列：' + q.map(function(s){ return s.t; }).join('、'));
+      openDetail(q[0].i); return;
+    }
+    if (act === 'stale'){ showView('lib','stale'); toast('长期未练：超过 30 天未练习的曲目'); return; }
+    if (act === 'random'){
+      var r = shuffle(SONGS.slice()).slice(0,3);
+      toast('随机队列：' + r.map(function(s){ return s.t; }).join('、'));
+      openDetail(r[0].i); return;
+    }
+    if (act === 'known'){
+      if (!knownList().length){ toast('还没有标记「我会了」的曲目'); showView('lib',''); return; }
+      showView('lib','known'); return;
+    }
+    if (act === 'learning'){
+      if (!learningList().length){ toast('「新学」里还没有曲目，先去加几首'); showView('lib',''); return; }
+      showView('lib','learning'); return;
+    }
+    if (act === 'settings'){ showView('settings'); return; }
+  });
+  /* 功能页：我的标签 */
+  el('tool-tags').addEventListener('click', function(e){
+    if (e.target.closest('#tag-add')){ showView('tags'); return; }
+    var b = e.target.closest('button[data-tagval]'); if (!b) return;
+    onlyTag(b.dataset.tagval);
+  });
+  /* 功能页：常用歌手（按钮带 data-artist，由 .main 委托统一处理，此处不再重复绑定） */
+  el('lnk-all-artists').addEventListener('click', function(){ arPick=''; arBackTo='home'; showView('artists',''); });
+  /* 歌手页「‹ 返回」：在歌手列表↔歌手曲目之间切；已在列表则回上一页 */
+  el('arBack').addEventListener('click', function(){
+    if (arPick){ arPick = ''; renderArtistPage(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    showView(arBackTo === 'tools' ? 'tools' : 'home', '');
+  });
+  /* 歌手页顶部搜索：输入即过滤歌手；回车直接进第一个结果；Esc 清空 */
+  el('q-ar').addEventListener('input', function(){ searchArtists(this.value.trim()); });
+  el('q-ar').addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){ this.value = ''; searchArtists(''); return; }
+    if (e.key !== 'Enter') return;
+    var first = document.querySelector('#arGrid .arow');
+    if (first) openArtist(first.getAttribute('data-ar'));
+    else toast('没有匹配「' + (this.value.trim() || '') + '」的歌手');
+  });
+  el('q-tools').addEventListener('keydown', function(e){
+    if (e.key !== 'Enter') return;
+    if (sugEnter(this)) return;
+    el('q-lib').value = this.value; this.value = ''; showView('lib','');
+  });
+
+  /* 三个搜索框：实时联想（输入即动态显示相关歌手 / 曲目） */
+  ['q-home','q-lib','q-tools'].forEach(function(id){
+    var inp = el(id); if (!inp) return;
+    inp.addEventListener('input', function(){ renderSug(inp); });
+    inp.addEventListener('focus', function(){ if (inp.value.trim()) renderSug(inp); });
+    inp.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ closeSug(); return; }
+      if (id === 'q-lib' && e.key === 'Enter'){ if (!sugEnter(inp)) closeSug(); return; }
+      if (el('sugbox').hidden) return;
+      if (e.key === 'ArrowDown'){ e.preventDefault(); sugIdx = Math.min(sugIdx + 1, sugItems.length - 1); paintSugSel(); }
+      else if (e.key === 'ArrowUp'){ e.preventDefault(); sugIdx = Math.max(sugIdx - 1, -1); paintSugSel(); }
+    });
+  });
+  el('sugbox').addEventListener('mousedown', function(e){
+    var it = e.target.closest('.sg-i'); if (!it) return;
+    e.preventDefault();                                 /* 阻止输入框先失焦 */
+    activateSug(it);
+  });
+  document.addEventListener('mousedown', function(e){
+    if (el('sugbox').hidden) return;
+    if (e.target.closest('#sugbox') || e.target.closest('#q-home') || e.target.closest('#q-lib') || e.target.closest('#q-tools')) return;
+    closeSug();
+  });
+  window.addEventListener('scroll', function(){ if (!el('sugbox').hidden) closeSug(); }, true);
+  window.addEventListener('resize', function(){ if (!el('sugbox').hidden && sugInput) positionSug(sugInput); });
+
+  /* 设置页 */
+  el('t-export').addEventListener('click', exportJSON);
+  el('t-import').addEventListener('click', function(){ el('fileImport').click(); });
+  el('fileImport').addEventListener('change', importJSON);
+  el('t-clear').addEventListener('click', clearAll);
+  el('t-report').addEventListener('click', showReport);
+  el('t-art-clear').addEventListener('click', function(){
+    var a = artStats();
+    if (!a.cn && !a.an){ toast('还没有自定义封面或头像'); return; }
+    if (!confirm('将清除 ' + a.cn + ' 张自定义封面、' + a.an + ' 个自定义头像，恢复成默认生成的封面与字标头像。继续？')) return;
+    state.covers = {}; state.avatars = {};
+    saveState(); toast('已恢复默认封面与头像'); refreshAll();
+  });
+  el('fileCover').addEventListener('change', function(){ onPickImage(this.files && this.files[0]); this.value=''; });
+  el('fileAvatar').addEventListener('change', function(){ onPickImage(this.files && this.files[0]); this.value=''; });
+
+  /* 详情页 */
+  el('dt-back').addEventListener('click', closeDetail);
+  el('dt-cover-btn').addEventListener('click', function(){ if (cur !== null) pickCover(cur); });
+  el('dt-fav').addEventListener('click', toggleFav);
+  el('dt-done').addEventListener('click', doPractice);
+  el('dt-prev').addEventListener('click', function(){ navDetail(-1); });
+  el('dt-next').addEventListener('click', function(){ navDetail(1); });
+  el('dt-status').addEventListener('change', function(){
+    if (cur===null) return;
+    var was = statusOf(cur);
+    state.status[cur] = this.value; saveState(); syncDtKnown();
+    toast(was === 'learning' && this.value === 'known' ? '已学会，已移出「新学」' : '状态已更新');
+  });
+  el('dt-known').addEventListener('click', function(){
+    if (cur === null) return;
+    var s = byId(cur); if (!s) return;
+    if (statusOf(cur) === 'known'){
+      state.status[cur] = 'learning'; saveState(); syncDtKnown();
+      el('dt-status').value = 'learning'; refreshAll();
+      toast('已撤回：《' + s.t + '》回到「新学」');
+    } else {
+      state.status[cur] = 'known'; saveState(); syncDtKnown();
+      el('dt-status').value = 'known'; refreshAll();
+      toast('已学会《' + s.t + '》，已移出「新学」');
+    }
+  });
+  document.querySelector('.dt-zoom').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-z]'); if (!b) return;
+    var z = b.dataset.z;
+    if (z === 'fit'){ zoom = 0; applyZoom(); }
+    else if (z === 'in') stepZoom(1);
+    else if (z === 'out') stepZoom(-1);
+    else if (z === '100'){ zoom = 100; applyZoom(); }   // 原图 = 1:1 原始像素
+  });
+  /* 拖动滑块缩放：input 事件在拖动过程中持续触发，松手前就已经是最终比例 */
+  el('dt-zslider').addEventListener('input', function(){
+    zoom = sliderToPct(+this.value);
+    applyZoom();
+  });
+  /* 点击百分比 → 直接输入任意比例；Ctrl / ⌘ + 滚轮 → 平滑缩放 */
+  el('dt-zval').addEventListener('click', function(){
+    var curp = zoom === 0 ? Math.round(fitZoomPercent()) : Math.round(zoom);
+    var v = prompt('输入缩放比例（' + ZOOM_MIN + '–' + ZOOM_MAX + '，% = 相对原图大小）：', curp);
+    if (v === null) return;
+    setZoomPercent(v);
+  });
+  // 拖动平移
+  (function(){
+    var box = el('dt-canvas'), down=false, sx=0, sy=0, sl=0, stp=0;
+    box.addEventListener('mousedown', function(e){ down=true; box.classList.add('grabbing'); sx=e.clientX; sy=e.clientY; sl=box.scrollLeft; stp=box.scrollTop; e.preventDefault(); });
+    /* Ctrl / ⌘ + 滚轮：平滑缩放，比例可任意 */
+    box.addEventListener('wheel', function(e){
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      stepZoom(e.deltaY < 0 ? 1 : -1);
+    }, { passive:false });
+    window.addEventListener('mousemove', function(e){ if(!down) return; box.scrollLeft = sl-(e.clientX-sx); box.scrollTop = stp-(e.clientY-sy); });
+    window.addEventListener('mouseup', function(){ down=false; box.classList.remove('grabbing'); });
+    window.addEventListener('resize', function(){ if (cur!==null) applyZoom(); });
+  })();
+  document.addEventListener('keydown', function(e){
+    if (el('detail').hidden) return;
+    if (e.key === 'Escape'){ closeDetail(); return; }
+    /* 焦点在滑块上时，方向键归滑块自己（否则按 ←/→ 会同时跳到上一首/下一首） */
+    var onSlider = e.target && e.target.id === 'dt-zslider';
+    if (!onSlider && e.key === 'ArrowLeft') navDetail(-1);
+    if (!onSlider && e.key === 'ArrowRight') navDetail(1);
+    if (e.key === '+' || e.key === '=') stepZoom(1);
+    if (e.key === '-' || e.key === '_') stepZoom(-1);
+  });
+
+  /* 安装提示 */
+  el('installBtn').addEventListener('click', function(){
+    alert('把工作台装到桌面 / 手机主屏：\n\n· 电脑浏览器：地址栏右侧「安装」图标，或菜单 →「安装此应用 / 创建快捷方式」\n· 手机浏览器：底部或右上角「分享」→「添加到主屏幕」\n\n本应用为单文件本地应用，安装后离线也能打开，谱面图片存放在同目录 assets 文件夹内，请勿移动。');
+  });
+  el('fab').addEventListener('click', function(){
+    var p = reviewPool().length, l = learningList().length;
+    alert('数据提醒\n\n· 今日待复习队列：'+p+' 首\n· 正在学：'+l+' 首\n· 收藏：'+favList().length+' 首\n\n建议每周到「功能」页点一次「导出 JSON 备份」。');
+  });
+}
+
+/* ---------- 备份 ---------- */
+function exportJSON(){
+  var st = artStats();
+  if ((st.cn + st.an) > 20 &&
+      !confirm('备份会包含 ' + st.cn + ' 张自定义封面、' + st.an + ' 个自定义头像（约 '
+               + st.kb + ' KB），文件体积会比较大。继续导出？')) return;
+  var payload = {
+    app:'弦库·吉他谱管理台', version:1, exportedAt: new Date().toISOString(),
+    totalSongs: SONGS.length, data: state
+  };
+  var blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '弦库备份-'+TODAY+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 3000);
+  toast('已导出备份文件');
+}
+function importJSON(e){
+  var f = e.target.files && e.target.files[0]; if (!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    try{
+      var o = JSON.parse(r.result);
+      var d = o.data || o;
+      var n = 0, imgs = 0;
+      if (d.fav)    { for (var k in d.fav)    { if(!state.fav[k]){ state.fav[k]=1; n++; } } }
+      if (d.status) { for (var k2 in d.status){ state.status[k2]=d.status[k2]; n++; } }
+      if (d.plays)  { for (var k3 in d.plays) { state.plays[k3]=Math.max(playsOf(+k3), d.plays[k3]); n++; } }
+      if (d.last)   { for (var k4 in d.last)  { if(!state.last[k4] || d.last[k4]>state.last[k4]) state.last[k4]=d.last[k4]; n++; } }
+      if (d.logs && d.logs.length){
+        var seen = {}; state.logs.forEach(function(l){ seen[l.ts]=1; });
+        d.logs.forEach(function(l){ if(!seen[l.ts]){ state.logs.push(l); n++; } });
+      }
+      /* 自定义封面与头像也一并迁移，换设备不用重新找图 */
+      if (d.covers)  { for (var k5 in d.covers)  { if (d.covers[k5])  { state.covers[k5]  = d.covers[k5];  imgs++; } } }
+      if (d.avatars) { for (var k6 in d.avatars) { if (d.avatars[k6]) { state.avatars[k6] = d.avatars[k6]; imgs++; } } }
+      saveState(); refreshAll();
+      toast('导入完成，合并 '+n+' 条记录'+(imgs?'，含 '+imgs+' 张自定义图片':''));
+    }catch(err){ toast('文件解析失败，请选择本应用导出的 JSON 备份'); }
+    e.target.value = '';
+  };
+  r.readAsText(f);
+}
+function clearAll(){
+  if (!confirm('确认清空全部学习数据？\n\n将删除：收藏、新学/已学会标记、练习次数、练习记录。\n谱库本身（' + SONGS.length + ' 首谱子）与你换过的封面/头像都不受影响。\n\n此操作不可撤销，建议先导出备份。')) return;
+  if (!confirm('再确认一次：真的要清空吗？')) return;
+  var keepCovers = state.covers || {}, keepAvatars = state.avatars || {};
+  state = { fav:{}, status:{}, plays:{}, last:{}, logs:[], seen:{}, covers:keepCovers, avatars:keepAvatars };
+  (function reseed(){ for (var k=0;k<SONGS.length;k++){ if (SONGS[k].f.indexOf('未学会/')>=0 || SONGS[k].nl) state.status[SONGS[k].i]='learning'; } })();
+  saveState(); refreshAll();
+  toast('已清空，恢复到初始状态');
+}
+
+/* ---------- 启动 ---------- */
+function initFilters(){
+  function fill(id, arr, label){
+    var s = el(id);
+    arr.forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=label(v); s.appendChild(o); });
+  }
+  fill('f-artist', distinct('a'), function(v){ return v; });
+  fill('f-genre',  distinct('g'), function(v){ return v; });
+  fill('f-cat',    distinct('c'), function(v){ return v; });
+  fill('f-level',  ['入门','简单','中等','进阶','困难'].filter(function(v){ return countBy('d')[v]; }), function(v){ return v; });
+  /* 状态筛选：新学 / 已学会 / 未开始，只列出确实有曲目的项 */
+  var LABEL = { new:'未开始', learning:'新学', known:'已学会' };
+  fill('f-status', ['learning','known','new'].filter(function(v){
+    return SONGS.some(function(s){ return statusOf(s.i) === v; });
+  }), function(v){ return LABEL[v] || v; });
+}
+var __booted = false;
+/* 支持深链：#lib / #log / #song=33 等，便于直接打开某一页或某首谱 */
+function applyHash(){
+  var h = (location.hash || '').replace(/^#/, '');
+  if (!h) return;
+  var m = h.match(/^song=(\d+)$/);
+  if (m && byId(+m[1])){ openDetail(+m[1]); return; }
+  if (['home','tools','lib','fav','log','tags'].indexOf(h) >= 0) showView(h, '');
+}
+function boot(){
+  if (__booted) return; __booted = true;
+  loadState();
+  seedNewLearn();
+  bind();
+  initFilters();
+  refreshAll();
+  applyHash();
+  window.addEventListener('hashchange', applyHash);
+  setTimeout(function(){
+    if (state.logs.length === 0 && !localStorage.getItem(LS_KEY+'_greeted')){
+      try{ localStorage.setItem(LS_KEY+'_greeted','1'); }catch(e){}
+      toast('已载入 ' + SONGS.length + ' 份吉他谱，点任意卡片即可查看谱面');
+    }
+  }, 700);
+}
+document.addEventListener('DOMContentLoaded', boot);
+if (document.readyState !== 'loading') boot();
+</script>
+<script>
+/* PWA：注册 Service Worker 以支持「安装到桌面 / 主屏」与离线打开。
+   失败时静默降级（不影响网页本身使用）。仅在 https 或 localhost 生效。 */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW 注册失败：', e); });
+  });
+}
+</script>
+</body>
+</html>

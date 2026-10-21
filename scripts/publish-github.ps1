@@ -39,13 +39,14 @@ try {
     if ($entry.type -eq 'blob') { $remoteByPath[$entry.path] = $entry.sha }
   }
 
-  $trackedPaths = @(& $gitExe @gitConfig ls-files)
+  $trackedPaths = @(& $gitExe @gitConfig -c core.quotepath=false ls-files)
   $treeElements = @()
   $changedCount = 0
   foreach ($path in $trackedPaths) {
     $fullPath = Join-Path $projectRoot ($path.Replace('/', '\'))
     $sha = (& $gitExe @gitConfig hash-object -- $fullPath).Trim()
     if ($remoteByPath[$path] -ne $sha) {
+      Write-Host "Uploading $path"
       $body = @{
         content = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($fullPath))
         encoding = 'base64'

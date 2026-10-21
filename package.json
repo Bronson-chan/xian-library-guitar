@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build-pages.mjs",
-    "build:pages": "node scripts/build-pages.mjs",
+    "build": "node scripts/build-workbuddy.mjs",
+    "build:pages": "node scripts/build-workbuddy.mjs",
     "preview": "node scripts/serve-pages.mjs"
   }
 }

@@ -1,5 +1,7 @@
 # 弦库 · 吉他乐谱工作台
 
+2026-10-21：正式主界面已接入 WorkBuddy 交接新版（157 首、91 位歌手），可编辑源码在 `workbuddy/source/`。先运行 `python workbuddy/source/build.py` 再运行 `npm run build`。媒体更新后运行 `node scripts/pack-workbuddy.mjs`，发布流程自动还原分片。旧版保留在 [legacy/](https://bronson-chan.github.io/xian-library-guitar/legacy/) 供读取旧本机记录。新版使用 localStorage，旧版使用 IndexedDB；两者记录尚未自动迁移。详见 `workbuddy/INTEGRATION.md`。
+
 公开 PWA 网站，使用 GitHub Pages 和自定义 GitHub Actions 部署。网页无需账号即可在电脑或手机上打开，支持安装到桌面。
 
 正式地址：`https://bronson-chan.github.io/xian-library-guitar/`

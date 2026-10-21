@@ -4,5 +4,6 @@ pages-dist/
 assets/
 catalog/
 packed/*.tar
+workbuddy/site/assets/
 .DS_Store
 *.log

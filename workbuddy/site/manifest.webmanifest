@@ -1,0 +1,22 @@
+{
+  "name": "弦库 · 吉他谱管理台",
+  "short_name": "弦库",
+  "description": "个人吉他乐谱工作台：曲库浏览、谱面查看、练习与收藏",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FAF5EF",
+  "theme_color": "#FAF5EF",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

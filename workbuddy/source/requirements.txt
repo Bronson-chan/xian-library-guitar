@@ -1,0 +1,7 @@
+# 构建本站（单文件版）的 Python 依赖
+# 核心构建 build.py 只需 Python 3.8+ 标准库，无需安装任何第三方包。
+# 仅当需要【重新生成程序化封面】gencovers.py 时才需要 Pillow：
+Pillow>=10.0
+# 仅当需要对谱图做图像处理（如 _gencover_new.py / 清晰度修复）时才需要：
+opencv-python>=4.8
+numpy>=1.24

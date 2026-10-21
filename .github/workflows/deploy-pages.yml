@@ -32,6 +32,10 @@ jobs:
         run: |
           cat packed/site-assets.tar.part-* > packed/site-assets.tar
           tar -xf packed/site-assets.tar
+          cat packed/workbuddy-assets.tar.part-* > packed/workbuddy-assets.tar
+          tar -xf packed/workbuddy-assets.tar
+      - name: Build WorkBuddy application
+        run: python3 workbuddy/source/build.py
       - name: Build and validate static PWA
         run: npm run build:pages
       - name: Configure Pages
