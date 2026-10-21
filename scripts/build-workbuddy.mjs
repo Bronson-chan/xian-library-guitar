@@ -3,9 +3,15 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'), 'utf8'));
-if (meta.songs.length !== 157 || new Set(meta.songs.map(s => s.i)).size !== 157) throw Error('Expected 157 distinct songs');
+if (meta.songs.length < 157 || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 157 distinct songs');
 const avatars = JSON.parse(await readFile(join(root, 'workbuddy/source/img_report.json'), 'utf8')).avatar_map;
 for (const song of meta.songs) {
+  // Every song added since the handoff needs verified recording metadata and real album artwork.
+  if (song.i >= 156) {
+    if (!song.a || !song.album || !song.albumArtist || !song.artworkVerified || !song.artworkSource?.startsWith('https://') || !song.trackSource?.startsWith('https://') || !song.coverPath?.startsWith('album-art/')) throw Error(`Verify singer, recording album and real artwork before publishing ${song.t}`);
+    if (!avatars[song.a]) throw Error(`Missing singer portrait for ${song.t}`);
+    if (!(await stat(join(root, 'workbuddy/site', song.coverPath))).size) throw Error(`Missing verified album artwork: ${song.t}`);
+  }
   for (const kind of ['tabs', 'covers']) {
     const info = await stat(join(root, `workbuddy/site/assets/${kind}/${song.i}.jpg`));
     if (!info.size) throw Error(`Missing ${kind} for ${song.t}`);

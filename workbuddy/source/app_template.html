@@ -1310,7 +1310,7 @@ function avInitial(name){
   var c = s.charAt(0);
   return /[a-zA-Z]/.test(c) ? c.toUpperCase() : c;
 }
-function coverSrc(i){ return state.covers[i] || ('assets/covers/' + i + '.jpg'); }
+function coverSrc(i){ var s = byId(i); return state.covers[i] || (s && s.coverPath) || ('assets/covers/' + i + '.jpg'); }
 /* 歌手头像：已上传照片 > 内置真实歌手照片 > 字标头像 */
 var AVATAR_MAP = __AVATAR_MAP__;
 function avHtml(name, cls){
@@ -1409,7 +1409,7 @@ function actionsHTML(s, cls){
 }
 function cardHTML(s){
   return '<div class="card">'
-    + '<div class="card-img" data-open="'+s.i+'"><img loading="lazy" src="assets/covers/'+s.i+'.jpg" alt="'+esc(s.t)+'谱面缩略图"></div>'
+    + '<div class="card-img" data-open="'+s.i+'"><img loading="lazy" src="'+esc(coverSrc(s.i))+'" alt="'+esc(s.t)+'专辑封面"></div>'
     + '<div class="card-title" data-open="'+s.i+'">'+esc(s.t)+'</div>'
     + '<div class="card-artist">'+avHtml(s.a)+'<span class="an">'+esc(s.a)+'</span></div>'
     + tagRow(s)
@@ -1420,7 +1420,7 @@ function rowCardHTML(s){
   var st = statusOf(s.i);
   var sub = st==='known' ? '已掌握' : (neverPracticed(s.i) ? '还没练过' : '练习 '+playsOf(s.i)+' 次');
   return '<div class="rowcard" data-open="'+s.i+'">'
-    + '<div class="thumb"><img loading="lazy" src="assets/covers/'+s.i+'.jpg" alt=""></div>'
+    + '<div class="thumb"><img loading="lazy" src="'+esc(coverSrc(s.i))+'" alt=""></div>'
     + '<div class="rc-main"><div class="rc-title">'+esc(s.t)+'</div><div class="rc-sub">'+avHtml(s.a)+'<span class="rc-sub-t">'+esc(s.a)+' · '+sub+'</span></div></div>'
     + actionsHTML(s)
     + '</div>';
@@ -1430,7 +1430,7 @@ function libRowHTML(s){
   var st = statusOf(s.i);
   var sub = st==='known' ? '已掌握' : (neverPracticed(s.i) ? '还没练过' : '练习 '+playsOf(s.i)+' 次');
   return '<div class="lib-row" data-open="'+s.i+'">'
-    + '<div class="thumb"><img loading="lazy" src="assets/covers/'+s.i+'.jpg" alt=""></div>'
+    + '<div class="thumb"><img loading="lazy" src="'+esc(coverSrc(s.i))+'" alt=""></div>'
     + '<div class="lm"><div class="lt">'+esc(s.t)+'</div>'
     + '<div class="ls">'+avHtml(s.a)+'<span>'+esc(s.a)+'</span>'
     + '<span class="tag">'+esc(s.g)+'</span><span class="tag">'+esc(s.c)+'</span>'
@@ -1483,7 +1483,7 @@ function learnRowHTML(s){
   var st = statusOf(s.i);
   var sub = st === 'known' ? '已掌握' : (neverPracticed(s.i) ? '还没练过' : '练习 ' + playsOf(s.i) + ' 次');
   return '<div class="rcard">'
-    + '<img class="cover" loading="lazy" data-open="' + s.i + '" src="assets/covers/' + s.i + '.jpg" alt="">'
+    + '<img class="cover" loading="lazy" data-open="' + s.i + '" src="' + esc(coverSrc(s.i)) + '" alt="">'
     + '<div class="info" data-open="' + s.i + '"><b>' + esc(s.t) + '</b>'
     + '<span class="sub">' + avHtml(s.a) + '<span>' + esc(s.a) + '</span><span class="st">· ' + sub + '</span></span></div>'
     + '<div class="acts">'
@@ -1496,7 +1496,7 @@ function learnRowHTML(s){
 function reviewRowHTML(s){
   var sub = neverPracticed(s.i) ? '还没练过' : '练习 ' + playsOf(s.i) + ' 次';
   return '<div class="rcard">'
-    + '<img class="cover" loading="lazy" data-open="' + s.i + '" src="assets/covers/' + s.i + '.jpg" alt="">'
+    + '<img class="cover" loading="lazy" data-open="' + s.i + '" src="' + esc(coverSrc(s.i)) + '" alt="">'
     + '<div class="info" data-open="' + s.i + '"><b>' + esc(s.t) + '</b>'
     + '<span class="sub">' + avHtml(s.a) + '<span>' + esc(s.a) + '</span>'
     + '<span class="mini">' + esc(s.g) + '</span><span class="mini">' + esc(s.c) + '</span>'
@@ -1626,7 +1626,7 @@ function renderDownload(){
   el('dl-sel').textContent = '已选 ' + dlCount() + ' 首';
   setHTML('dl-list', list.map(function(s){
     return '<div class="dlrow"><span class="box' + (dlSel[s.i] ? ' on' : '') + '" data-dl="' + s.i + '"></span>'
-      + '<img loading="lazy" src="assets/covers/' + s.i + '.jpg" alt="">'
+      + '<img loading="lazy" src="' + esc(coverSrc(s.i)) + '" alt="">'
       + '<b>' + esc(s.t) + '</b><span>' + esc(s.a) + '</span></div>';
   }).join(''));
 }
