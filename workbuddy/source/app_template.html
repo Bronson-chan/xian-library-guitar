@@ -720,6 +720,21 @@ input[type=file]{display:none}
   .filters select{height:44px;font-size:16px}
   .btn-soft,.btn-line,.btn-solid,.tool button{min-height:44px}
 }
+/* Restrained motion: no layout changes, loops, media assets or permanent GPU hints. */
+:root{--motion-ease:cubic-bezier(.16,1,.3,1)}
+button:not(:disabled){transition:transform 90ms var(--motion-ease),background-color 120ms ease,color 120ms ease}
+button:not(:disabled):active{transform:translateY(1px)}
+@media (hover:hover) and (pointer:fine){
+  .card,.rowcard,.lib-row,.rcard,.tcard,.arow,.quick,.mp-card{
+    transition:transform 140ms var(--motion-ease),background-color 140ms ease}
+  .card:hover,.rowcard:hover,.lib-row:hover,.rcard:hover,.tcard:hover,.arow:hover,.quick:hover,.mp-card:hover{transform:translateY(-2px)}
+  .card:active,.rowcard:active,.lib-row:active,.rcard:active,.tcard:active,.arow:active,.quick:active,.mp-card:active{transform:translateY(0);transition-duration:90ms}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .card:hover,.rowcard:hover,.lib-row:hover,.rcard:hover,.tcard:hover,.arow:hover,.quick:hover,.mp-card:hover,
+  button:not(:disabled):active{transform:none!important}
+}
 </style>
 </head>
 <body>
@@ -1139,6 +1154,51 @@ input[type=file]{display:none}
 
 /* ---------- 数据层 ---------- */
 var SONGS = __SONGS_JSON__;
+
+/* Motion is optional feedback. State updates never await an animation. */
+var motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+var motionByElement = new WeakMap(), activeMotion = new Set();
+function stopMotion(){
+  activeMotion.forEach(function(a){ a.cancel(); });
+  activeMotion.clear();
+}
+function playMotion(target, frames, duration){
+  if (!target || !target.animate || motionPreference.matches || document.hidden) return;
+  var previous = motionByElement.get(target);
+  if (previous){
+    var current = getComputedStyle(target);
+    frames[0] = Object.assign({}, frames[0]);
+    if ('opacity' in frames[0]) frames[0].opacity = current.opacity;
+    if ('transform' in frames[0]) frames[0].transform = current.transform;
+    previous.cancel();
+  }
+  var animation = target.animate(frames, {duration:duration,easing:'cubic-bezier(.16,1,.3,1)'});
+  motionByElement.set(target, animation);
+  activeMotion.add(animation);
+  function cleanup(){
+    activeMotion.delete(animation);
+    if (motionByElement.get(target) === animation) motionByElement.delete(target);
+  }
+  animation.onfinish = cleanup;
+  animation.oncancel = cleanup;
+}
+function revealMotion(target, duration, distance){
+  playMotion(target, [{opacity:.92,transform:'translateY('+distance+'px)'},{opacity:1,transform:'translateY(0)'}], duration);
+}
+function openRandomDetail(i){
+  openDetail(i);
+  playMotion(el('dt-cover'), [
+    {transform:'rotate(-6deg) scale(.96)',opacity:.9},
+    {transform:'rotate(2deg) scale(1)',opacity:1,offset:.45},
+    {transform:'rotate(0) scale(1)',opacity:1}
+  ],360);
+}
+/* Any next input skips residual feedback; no click, key, or scroll is swallowed. */
+document.addEventListener('pointerdown', stopMotion, {capture:true,passive:true});
+document.addEventListener('keydown', stopMotion, {capture:true});
+document.addEventListener('wheel', stopMotion, {capture:true,passive:true});
+document.addEventListener('visibilitychange', function(){ if (document.hidden) stopMotion(); });
+if (motionPreference.addEventListener) motionPreference.addEventListener('change', function(){ if (motionPreference.matches) stopMotion(); });
 
 var LS_KEY = 'wb_xiangu_v1';
 /* reviewDay：今天建议复习锁定的那一组，形如 { d:'2026-10-04', ids:[i,i,i] }
@@ -1711,6 +1771,8 @@ function libOpts(){
 }
 function renderLib(){
   var all = filterSongs(libOpts());
+  var motionKey = libMode + ':' + libShown + ':' + all.map(function(s){return s.i;}).join(',');
+  var listChanged = el('lib-grid').dataset.motionKey !== motionKey;
   el('lib-count').textContent = all.length;
   paintLibChips(all.length);
   // 预设提示条（已被 chip 条覆盖，仅保留计数）
@@ -1732,6 +1794,8 @@ function renderLib(){
   }
   el('lib-more-wrap').hidden = all.length <= libShown;
   el('lib-more').textContent = '加载更多（还有 '+(all.length-libShown)+' 首）';
+  el('lib-grid').dataset.motionKey = motionKey;
+  if (listChanged && view === 'lib') revealMotion(el('lib-grid'),140,2);
 }
 function setLibMode(m){
   if (libMode === m) return;
@@ -2123,6 +2187,7 @@ var cur = null, zoom = 0, cw = 0; // zoom: 0=适应宽度；>0 表示相对原�
 var ZOOM_MIN = 20, ZOOM_MAX = 1200; // 缩放范围（%），以原图自然像素为 100%
 function openDetail(i){
   var s = byId(i); if (!s) return;
+  stopMotion();
   cur = i;
   state.seen[i] = (state.seen[i]||0)+1;
   el('dt-title').textContent = s.t;
@@ -2143,9 +2208,12 @@ function openDetail(i){
   document.body.style.overflow = 'hidden';
   applyZoom();
   el('dt-canvas').scrollTop = 0; el('dt-canvas').scrollLeft = 0;
+  // Animate the small title, never promote a full-resolution score to an animated GPU layer.
+  playMotion(el('dt-title'),[{opacity:.85},{opacity:1}],120);
   saveState();
 }
 function closeDetail(){
+  stopMotion();
   el('detail').hidden = true;
   document.body.style.overflow = '';
   el('dt-img').src = '';
@@ -2284,6 +2352,8 @@ function openMenu(id, x, y){
 /* ---------- 导航 ---------- */
 var view = 'home';
 function showView(v, preset){
+  var changedView = view !== v;
+  stopMotion();
   view = v;
   closeSug();                                   /* 切页面时收起搜索联想 */
   if (preset !== undefined) libPreset = preset || '';
@@ -2292,6 +2362,7 @@ function showView(v, preset){
   el('main').classList.toggle('no-rail', v !== 'home');   /* 右栏只在「发现」页出现 */
   refreshAll();
   window.scrollTo({ top: 0 });
+  if (changedView) revealMotion(el('v-'+v),180,3);
 }
 /* 统一刷新入口：所有联动都走这里，渲染函数之间互不调用 */
 function refreshAll(){
@@ -2332,7 +2403,7 @@ function bind(){
   document.querySelector('.quick-grid').addEventListener('click', function(e){
     var b = e.target.closest('button[data-act]'); if (!b) return;
     var act = b.dataset.act;
-    if (act === 'random'){ openDetail(SONGS[Math.floor(Math.random()*SONGS.length)].i); return; }
+    if (act === 'random'){ openRandomDetail(SONGS[Math.floor(Math.random()*SONGS.length)].i); return; }
     if (act === 'stale'){ showView('lib','stale'); toast('很久没弹：超过 30 天未练习的曲目'); return; }
     if (act === 'known'){
       if (!knownList().length){ toast('还没有「已学会」的曲目，在曲谱页点「我学会了」试试'); showView('lib',''); }
@@ -2355,11 +2426,11 @@ function bind(){
   el('lnk-learn-one').addEventListener('click', function(){
     var l = learningList();
     if (!l.length){ toast('「新学」里还没有曲目'); return; }
-    openDetail(l[Math.floor(Math.random()*l.length)].i);
+    openRandomDetail(l[Math.floor(Math.random()*l.length)].i);
   });
   el('heroFilter').addEventListener('click', function(){ showView('lib',''); });
   /* 侧栏「随机一首」卡：整卡可点 = 随机播一首 */
-  function mpShuffle(){ openDetail(SONGS[Math.floor(Math.random()*SONGS.length)].i); }
+  function mpShuffle(){ openRandomDetail(SONGS[Math.floor(Math.random()*SONGS.length)].i); }
   var mpCardEl = el('mpCard');
   mpCardEl.addEventListener('click', mpShuffle);
   mpCardEl.addEventListener('keydown', function(e){
@@ -2532,7 +2603,7 @@ function bind(){
     if (act === 'random'){
       var r = shuffle(SONGS.slice()).slice(0,3);
       toast('随机队列：' + r.map(function(s){ return s.t; }).join('、'));
-      openDetail(r[0].i); return;
+      openRandomDetail(r[0].i); return;
     }
     if (act === 'known'){
       if (!knownList().length){ toast('还没有标记「我会了」的曲目'); showView('lib',''); return; }
@@ -2792,6 +2863,7 @@ function boot(){
   initFilters();
   refreshAll();
   applyHash();
+  if (view === 'home' && el('detail').hidden) revealMotion(el('v-home'),280,4);
   window.addEventListener('hashchange', applyHash);
   setTimeout(function(){
     if (state.logs.length === 0 && !localStorage.getItem(LS_KEY+'_greeted')){

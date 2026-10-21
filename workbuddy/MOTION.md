@@ -1,0 +1,36 @@
+# 克制动效升级（2026-10-21）
+
+## Skill 安装与使用范围
+
+已阅读 https://github.com/oil-oil/oil-motion 的 README.md 与 SKILL.md，并通过官方 npm/npx 执行 `skills add oil-oil/oil-motion --agent codex --global --yes`。
+`skills list --global --agent codex` 已列出 oil-motion（来源 oil-oil/oil-motion）。安装路径为 `C:/Users/admin/.agents/skills/oil-motion/`，本会话已手动重新读取安装后的 SKILL.md；后续会话可按名称加载。
+
+上游支持 Python 3.10+、Pillow、FFmpeg/ffprobe，本地凭据页面需 Node 22.18+，文档列有 Windows 凭据管理器支持，但作者只声明 macOS 实机验证。安装已在本 Windows 环境完成；本次未测试或配置生成服务。
+
+Oil Motion 明确排除普通 CSS/JS 界面过渡，本次只采用其适用边界，不使用生成管线或媒体运行时。没有视频、序列帧、额外生产依赖、API Key、收费接口或循环吉他动画。
+
+## 原生效果与预算
+
+| 场景 | 原生方案 | 时长 |
+| --- | --- | --- |
+| 首页第一次进入 | 可见内容从 92% 不透明度与 4px 位移回到静态位置 | 280ms |
+| 按钮点击 | 1px 按压反馈 | 90ms |
+| 桌面卡片悬停 | 2px 抬升，触控不触发悬停 | 140ms |
+| 页面切换 | 3px 位移与轻淡入 | 180ms |
+| 曲库筛选、列表/卡片切换 | 结果集合变动才播放，2px 轻位移 | 140ms |
+| 随机抽谱 | 立即确定并打开谱子，40px 封面单次轻旋回正 | 360ms |
+| 曲谱切换 | 小标题轻淡入；高清谱图不做动画、不等待标题 | 120ms |
+
+任何后续点击、键盘操作或滚轮都取消残余 Web Animations，不拦截原操作；快速切换取消旧动画，不排队、不设置业务延迟。完成后释放动画引用，无常驻 RAF、计时器、will-change 或动画图像缓存。系统减少动态效果时自动静态显示；切离标签页取消未完成效果，返回时不重播。
+
+动画仍有短时合成与极小 JS 状态开销，不承诺绝对零内存增量。源码增加约 7KB（未压缩），没有新增图片或视频请求。未引入谱图预加载变化、数据结构迁移或存储键更改。
+
+## 检查与复现
+
+1. `python workbuddy/source/build.py`，`npm run build`，`npm run preview`。
+2. 打开预览的 `/xian-library-guitar/`，体验首页、悬停、分类和随机抽谱；连续操作可直接中断反馈。
+3. 打开高清谱，Ctrl＋滚轮缩放、上一首/下一首、完成练习应与原来一致。
+4. Windows 在“辅助功能 → 视觉效果”关闭“动画效果”（或在浏览器开发者工具模拟 prefers-reduced-motion: reduce），验证静态降级。
+5. 使用本机 Playwright/Edge 运行 `scripts/qa-motion.cjs`（通过 NODE_PATH 指向 Playwright）。测试同时覆盖桌面、390px 手机、减少动态效果、首页几何、收藏/熟练度/练习次数、快速连击、全部搜索结果滚动和谱图缩放。测试基线取运行时 Git HEAD，提交前用于对比升级前界面。
+
+本次本机 Edge 在资源就绪后的 RAF 样本：基线均值16.66ms、升级版16.67ms（P95 16.7ms），手机16.66ms；未发现稳定帧率退化。初次加载中的一次短样本出现516ms离群间隔，未排除资源加载或环境调度影响，因此没有把冷启动样本当作纯动画性能，也不保证所有设备或冷启动期间60FPS。原有设计扫描的浅色文字/间距提示属于既有样式，本次遵照保留布局与设计要求未扩大改动。
