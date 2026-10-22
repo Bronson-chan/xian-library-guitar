@@ -61,7 +61,7 @@ async function frameSample(page) {
       });
       assert.equal(result.immediate.id,156);assert.equal(result.immediate.visible,true);
       assert.equal(result.skipped,0);assert.equal(result.lastId,11);assert.equal(result.statePreserved,true);assert.equal(result.count,157);assert.equal(result.active,0);
-      assert.equal(result.immediate.duration,mode==='reduced'?0:360);
+      assert.equal(result.immediate.duration,0);
       await page.evaluate(() => showView('lib',''));
       await page.locator('#q-lib').fill('爱');
       assert.equal(await page.locator('#sugbox [data-sg=s]').count(),22);

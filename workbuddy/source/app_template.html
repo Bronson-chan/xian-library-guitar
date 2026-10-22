@@ -1163,24 +1163,7 @@ function stopMotion(){
   activeMotion.clear();
 }
 function playMotion(target, frames, duration){
-  if (!target || !target.animate || motionPreference.matches || document.hidden) return;
-  var previous = motionByElement.get(target);
-  if (previous){
-    var current = getComputedStyle(target);
-    frames[0] = Object.assign({}, frames[0]);
-    if ('opacity' in frames[0]) frames[0].opacity = current.opacity;
-    if ('transform' in frames[0]) frames[0].transform = current.transform;
-    previous.cancel();
-  }
-  var animation = target.animate(frames, {duration:duration,easing:'cubic-bezier(.16,1,.3,1)'});
-  motionByElement.set(target, animation);
-  activeMotion.add(animation);
-  function cleanup(){
-    activeMotion.delete(animation);
-    if (motionByElement.get(target) === animation) motionByElement.delete(target);
-  }
-  animation.onfinish = cleanup;
-  animation.oncancel = cleanup;
+  // Disabled: opening responsiveness takes precedence over decoration.
 }
 function revealMotion(target, duration, distance){
   playMotion(target, [{opacity:.92,transform:'translateY('+distance+'px)'},{opacity:1,transform:'translateY(0)'}], duration);
@@ -1771,8 +1754,6 @@ function libOpts(){
 }
 function renderLib(){
   var all = filterSongs(libOpts());
-  var motionKey = libMode + ':' + libShown + ':' + all.map(function(s){return s.i;}).join(',');
-  var listChanged = el('lib-grid').dataset.motionKey !== motionKey;
   el('lib-count').textContent = all.length;
   paintLibChips(all.length);
   // 预设提示条（已被 chip 条覆盖，仅保留计数）
@@ -1794,8 +1775,6 @@ function renderLib(){
   }
   el('lib-more-wrap').hidden = all.length <= libShown;
   el('lib-more').textContent = '加载更多（还有 '+(all.length-libShown)+' 首）';
-  el('lib-grid').dataset.motionKey = motionKey;
-  if (listChanged && view === 'lib') revealMotion(el('lib-grid'),140,2);
 }
 function setLibMode(m){
   if (libMode === m) return;
@@ -2185,6 +2164,39 @@ function showReport(){
 /* ---------- 详情页 ---------- */
 var cur = null, zoom = 0, cw = 0; // zoom: 0=适应宽度；>0 表示相对原图像素的百分比
 var ZOOM_MIN = 20, ZOOM_MAX = 1200; // 缩放范围（%），以原图自然像素为 100%
+// Keep at most the current score and one intended next score. Never preload the full library.
+var scoreImages = new Map();
+function prepareScore(i){
+  i = +i;
+  if (!byId(i)) return null;
+  if (scoreImages.has(i)) return scoreImages.get(i);
+  var img = new Image();
+  img.decoding = 'async';
+  img.fetchPriority = 'low';
+  img.alt = byId(i).t + ' 吉他谱';
+  img.onload = function(){
+    if (cur === i && !el('detail').hidden && el('dt-img') === img) applyZoom();
+  };
+  img.src = 'assets/tabs/'+i+'.jpg' + (i === 156 ? '?v=original-20261021' : '');
+  scoreImages.set(i,img);
+  while (scoreImages.size > 2){
+    var victim = Array.from(scoreImages.keys()).find(function(k){return k !== cur && k !== i;});
+    if (victim === undefined) break;
+    var released = scoreImages.get(victim);
+    scoreImages.delete(victim);
+    released.onload = null;
+    released.removeAttribute('src'); // Cancel abandoned loads during rapid switching.
+  }
+  if (img.decode) img.decode().catch(function(){});
+  return img;
+}
+function prepareScoreIntent(e){
+  var target = e.target.closest && e.target.closest('[data-open],[data-sg="s"]');
+  if (target) prepareScore(target.dataset.open !== undefined ? target.dataset.open : target.dataset.v);
+}
+document.addEventListener('pointerover', prepareScoreIntent, {passive:true});
+document.addEventListener('focusin', prepareScoreIntent);
+document.addEventListener('pointerdown', prepareScoreIntent, {passive:true});
 function openDetail(i){
   var s = byId(i); if (!s) return;
   stopMotion();
@@ -2195,9 +2207,13 @@ function openDetail(i){
     + '<span id="dt-sub">' + esc(s.a) + ' · 原始文件 ' + esc(s.f) + '</span>';
   el('dt-cover').src = coverSrc(i);
   el('dt-cover').alt = s.t + ' 封面';
-  el('dt-img').onload = function(){ if (!el('detail').hidden) applyZoom(); };
-  el('dt-img').src = 'assets/tabs/'+i+'.jpg' + (i === 156 ? '?v=original-20261021' : '');
-  el('dt-img').alt = s.t + ' 吉他谱';
+  var img = prepareScore(i), previousImg = el('dt-img');
+  img.fetchPriority = 'high';
+  if (previousImg !== img){
+    previousImg.removeAttribute('id');
+    img.id = 'dt-img';
+    previousImg.replaceWith(img);
+  }
   el('dt-status').value = statusOf(i);
   syncDtKnown();
   el('dt-fav').classList.toggle('on', isFav(i));
@@ -2208,15 +2224,13 @@ function openDetail(i){
   document.body.style.overflow = 'hidden';
   applyZoom();
   el('dt-canvas').scrollTop = 0; el('dt-canvas').scrollLeft = 0;
-  // Animate the small title, never promote a full-resolution score to an animated GPU layer.
-  playMotion(el('dt-title'),[{opacity:.85},{opacity:1}],120);
   saveState();
 }
 function closeDetail(){
   stopMotion();
   el('detail').hidden = true;
   document.body.style.overflow = '';
-  el('dt-img').src = '';
+  // Preserve the loaded node for instant reopen; the bounded cache releases older scores.
   cur = null;
   refreshAll();
 }
