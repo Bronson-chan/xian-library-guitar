@@ -903,6 +903,7 @@ button:not(:disabled):active{transform:translateY(1px)}
 
     <!-- 设置 -->
     <section class="view" id="v-settings">
+      <div class="tool" style="margin-bottom:16px"><h3>离线曲库 · 2026-11-03 版</h3><p id="offline-status" role="status">先联网保存全库，完成后本机看谱可离线使用。首次访问仍需网络。</p><button id="save-offline">保存全库到本机</button></div>
       <div class="page-title"><h2>设置</h2><p>全部数据存在本机浏览器，建议定期导出备份</p></div>
       <div class="dlbar">
         <button class="gbtn line" id="installBtn"><svg viewBox="0 0 24 24"><path d="M12 3.6v11.2"/><path d="M7.6 10.6 12 15l4.4-4.4"/><path d="M4.5 17.5v1.4a1.6 1.6 0 0 0 1.6 1.6h11.8a1.6 1.6 0 0 0 1.6-1.6v-1.4"/></svg>安装到电脑 / 手机主屏</button>
@@ -1111,7 +1112,7 @@ button:not(:disabled):active{transform:translateY(1px)}
                title="左右拖动即可缩放（20%–1200%，中间为原图大小）" aria-label="缩放比例">
       </div>
     </div>
-    <div class="dt-canvas" id="dt-canvas"><img id="dt-img" alt="" src=""></div>
+    <div class="dt-canvas" id="dt-canvas"><div id="score-error" hidden role="alert">谱图下载失败，请检查网络。<button id="retry-score">重新加载</button>　也可在设置提前保存全库。</div><img id="dt-img" alt="" src=""></div>
   </div>
 </div>
 
@@ -2175,9 +2176,11 @@ function prepareScore(i){
   img.fetchPriority = 'low';
   img.alt = byId(i).t + ' 吉他谱';
   img.onload = function(){
+    if(cur===i)el('score-error').hidden=true;
     if (cur === i && !el('detail').hidden && el('dt-img') === img) applyZoom();
   };
   img.src = 'assets/tabs/'+i+'.jpg' + (i === 156 ? '?v=original-20261021' : '');
+  img.onerror=function(){if(cur===i)el('score-error').hidden=false;};
   scoreImages.set(i,img);
   while (scoreImages.size > 2){
     var victim = Array.from(scoreImages.keys()).find(function(k){return k !== cur && k !== i;});
@@ -2201,6 +2204,7 @@ function openDetail(i){
   var s = byId(i); if (!s) return;
   stopMotion();
   cur = i;
+  el('score-error').hidden=true;
   state.seen[i] = (state.seen[i]||0)+1;
   el('dt-title').textContent = s.t;
   el('dt-subwrap').innerHTML = avHtml(s.a)
@@ -2695,6 +2699,18 @@ function bind(){
 
   /* 设置页 */
   el('t-export').addEventListener('click', exportJSON);
+  el('retry-score').addEventListener('click',function(){if(cur!==null){var id=cur;scoreImages.delete(id);openDetail(id);}});
+  var offlineSaving=false;
+  el('save-offline').addEventListener('click',async function(){
+    if(!('serviceWorker' in navigator)){el('offline-status').textContent='请使用支持离线保存的 Edge 或 Chrome。';return;}
+    var r=await navigator.serviceWorker.ready;r.active.postMessage({type:offlineSaving?'CANCEL_OFFLINE':'SAVE_OFFLINE'});
+    offlineSaving=!offlineSaving;this.textContent=offlineSaving?'停止保存（已保存内容保留）':'保存全库到本机';
+  });
+  if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',function(e){
+    var d=e.data;if(d.type!=='OFFLINE_PROGRESS')return;
+    el('offline-status').textContent=d.error?'保存失败：'+d.error:(d.finished?(d.cancelled?'已停止。':d.failed?'部分保存失败，请重试。':'全库已保存，本机可离线看谱。'):'正在保存：')+' '+d.done+'/'+d.total+'，失败 '+d.failed;
+    if(d.finished){offlineSaving=false;el('save-offline').textContent='保存全库到本机';}
+  });
   el('t-import').addEventListener('click', function(){ el('fileImport').click(); });
   el('fileImport').addEventListener('change', importJSON);
   el('t-clear').addEventListener('click', clearAll);
@@ -2894,7 +2910,9 @@ if (document.readyState !== 'loading') boot();
    失败时静默降级（不影响网页本身使用）。仅在 https 或 localhost 生效。 */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW 注册失败：', e); });
+    var hadController=!!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange',function(){if(!hadController)return;hadController=false;if(document.getElementById('detail').hidden)location.reload();else toast('新版已就绪，练完后刷新即可更新');});
+    navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){r.update().catch(function(){});}).catch(function (e) { console.warn('SW 注册失败：', e); });
   });
 }
 </script>

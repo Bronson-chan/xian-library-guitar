@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'), 'utf8'));
 if (meta.songs.length < 157 || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 157 distinct songs');
@@ -42,4 +43,13 @@ await mkdir(output);
 await cp(join(root, 'workbuddy/site'), output, { recursive: true });
 await rename(legacy, join(output, 'legacy'));
 await writeFile(join(output, '.nojekyll'), '');
+const release=createHash('sha256').update(html).digest('hex').slice(0,12);
+const worker=await readFile(join(root,'workbuddy/site/offline-worker.js'),'utf8');
+await writeFile(join(output,'offline-worker.js'),worker.replaceAll('__RELEASE__',release));
+await writeFile(join(output,'sw.js'),"importScripts('./offline-worker.js?release="+release+"');");
+const offline=new Set(['index.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
+for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=original-20261021':''));offline.add(s.coverPath||'assets/covers/'+s.i+'.jpg');}
+const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;
+for(const s of originals)if(s.coverUrl)offline.add('legacy/'+s.coverUrl.replace(/^\.\//,''));
+await writeFile(join(output,'offline-manifest.json'),JSON.stringify([...offline]));
 console.log('Verified 157 songs, all covers and artist photos; original 6648x3366 score. Previous app preserved at legacy/.');
