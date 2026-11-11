@@ -1,7 +1,7 @@
 {
  "sourceRoot": "D:\\桌面\\打包吉他谱",
  "scannedAt": "2026-09-30",
- "totalFiles": 157,
+ "totalFiles": 162,
  "fields": {
   "t": "曲名",
   "a": "歌手",
@@ -2061,6 +2061,11 @@
    "ts": "4/4",
    "d": "中等",
    "nl": 1
-  }
+  },
+  {"i":157,"f":"偏偏喜欢你.jpg","t":"偏偏喜欢你","a":"陈百强","album":"偏偏喜欢你","albumArtist":"陈百强","coverPath":"album-art/157.jpg","artworkSource":"https://music.apple.com/tw/album/726243514","trackSource":"https://music.apple.com/tw/song/726243548","artworkVerified":true,"g":"流行","c":"粤语","k":"G","ok":"G","capo":"","ts":"4/4","d":"中等","nl":1},
+  {"i":158,"f":"你那么爱她.jpg","t":"你那么爱她","a":"李圣杰","album":"音乐十年李圣杰，唯一精选","albumArtist":"李圣杰","coverPath":"album-art/158.jpg","artworkSource":"https://music.apple.com/tw/album/1635352858","trackSource":"https://music.apple.com/tw/song/1635352864","artworkVerified":true,"g":"流行","c":"国语","k":"G","ok":"Bb","capo":"3品","ts":"4/4","d":"中等","nl":1},
+  {"i":159,"f":"泪海.jpg","t":"泪海","a":"许茹芸","album":"泪海","albumArtist":"许茹芸","coverPath":"album-art/159.jpg","artworkSource":"https://music.apple.com/tw/album/1715425477","trackSource":"https://music.apple.com/tw/song/1715425481","artworkVerified":true,"g":"流行","c":"国语","k":"C","ok":"D","capo":"2品","ts":"4/4","d":"中等","nl":1},
+  {"i":160,"f":"这就是爱吗.jpg","t":"这就是爱吗","a":"容祖儿","album":"很忙","albumArtist":"容祖儿","coverPath":"album-art/160.jpg","artworkSource":"https://music.apple.com/tw/album/542414059","trackSource":"https://music.apple.com/tw/song/542414065","artworkVerified":true,"g":"流行","c":"国语","k":"C","ok":"C#","capo":"1品","ts":"4/4","d":"中等","nl":1},
+  {"i":161,"f":"倒数.jpg","t":"倒数","a":"邓紫棋","album":"另一个童话","albumArtist":"邓紫棋","coverPath":"album-art/161.jpg","artworkSource":"https://music.apple.com/tw/album/1422581993","trackSource":"https://music.apple.com/tw/song/1422581998","artworkVerified":true,"g":"流行","c":"国语","k":"C","ok":"F","capo":"5品","ts":"4/4","d":"中等","nl":1}
  ]
 }

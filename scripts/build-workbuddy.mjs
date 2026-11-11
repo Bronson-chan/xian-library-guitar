@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'), 'utf8'));
-if (meta.songs.length < 157 || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 157 distinct songs');
+if (meta.songs.length < 162 || meta.totalFiles !== meta.songs.length || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 162 distinct songs and a matching catalog total');
 const avatars = JSON.parse(await readFile(join(root, 'workbuddy/source/img_report.json'), 'utf8')).avatar_map;
 for (const song of meta.songs) {
   // Every song added since the handoff needs verified recording metadata and real album artwork.
@@ -13,7 +13,7 @@ for (const song of meta.songs) {
     if (!avatars[song.a]) throw Error(`Missing singer portrait for ${song.t}`);
     if (!(await stat(join(root, 'workbuddy/site', song.coverPath))).size) throw Error(`Missing verified album artwork: ${song.t}`);
   }
-  for (const kind of ['tabs', 'covers']) {
+  for (const kind of song.coverPath ? ['tabs'] : ['tabs', 'covers']) {
     const info = await stat(join(root, `workbuddy/site/assets/${kind}/${song.i}.jpg`));
     if (!info.size) throw Error(`Missing ${kind} for ${song.t}`);
   }
@@ -52,4 +52,4 @@ for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=
 const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;
 for(const s of originals)if(s.coverUrl)offline.add('legacy/'+s.coverUrl.replace(/^\.\//,''));
 await writeFile(join(output,'offline-manifest.json'),JSON.stringify([...offline]));
-console.log('Verified 157 songs, all covers and artist photos; original 6648x3366 score. Previous app preserved at legacy/.');
+console.log(`Verified ${meta.songs.length} songs, all covers and artist photos; original 6648x3366 score. Previous app preserved at legacy/.`);
