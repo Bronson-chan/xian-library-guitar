@@ -2167,20 +2167,52 @@ var cur = null, zoom = 0, cw = 0; // zoom: 0=适应宽度；>0 表示相对原�
 var ZOOM_MIN = 20, ZOOM_MAX = 1200; // 缩放范围（%），以原图自然像素为 100%
 // Keep at most the current score and one intended next score. Never preload the full library.
 var scoreImages = new Map();
+function fullScoreURL(i){
+  return 'assets/tabs/'+i+'.jpg' + (i === 156 ? '?v=original-20261021' : '');
+}
+function upgradeScore(i,img){
+  if(!img.dataset.fullWidth || img.fullImage || cur!==i || el('detail').hidden || el('dt-img')!==img)return;
+  var full=new Image();
+  img.fullImage=full;
+  full.alt=img.alt;full.decoding='async';full.fetchPriority='low';
+  // Give the readable preview a frame before starting the larger download.
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    if(scoreImages.get(i)!==img || cur!==i){img.fullImage=null;return;}
+    function promote(){
+      if(scoreImages.get(i)!==img)return;
+      scoreImages.set(i,full);
+      if(cur!==i || el('dt-img')!==img)return;
+      full.style.cssText=img.style.cssText;
+      img.removeAttribute('id');full.id='dt-img';img.replaceWith(full);
+      if(!el('detail').hidden)applyZoom();
+    }
+    full.onload=function(){if(full.decode)full.decode().then(promote,function(){img.fullImage=null;});else promote();};
+    full.onerror=function(){img.fullImage=null;};
+    full.src=fullScoreURL(i);
+  });});
+}
 function prepareScore(i){
   i = +i;
-  if (!byId(i)) return null;
-  if (scoreImages.has(i)) return scoreImages.get(i);
+  var song=byId(i);if(!song)return null;
+  if(scoreImages.has(i)){
+    var existing=scoreImages.get(i);
+    if(!existing.complete||existing.naturalWidth)return existing;
+    scoreImages.delete(i);
+  }
   var img = new Image();
   img.decoding = 'async';
   img.fetchPriority = 'low';
   img.alt = byId(i).t + ' 吉他谱';
   img.onload = function(){
     if(cur===i)el('score-error').hidden=true;
-    if (cur === i && !el('detail').hidden && el('dt-img') === img) applyZoom();
+    if (cur === i && !el('detail').hidden && el('dt-img') === img){applyZoom();upgradeScore(i,img);}
   };
-  img.src = 'assets/tabs/'+i+'.jpg' + (i === 156 ? '?v=original-20261021' : '');
-  img.onerror=function(){if(cur===i)el('score-error').hidden=false;};
+  if(song.previewWidth)img.dataset.fullWidth=song.previewWidth;
+  img.onerror=function(){
+    if(img.dataset.fullWidth){delete img.dataset.fullWidth;img.src=fullScoreURL(i);return;}
+    if(cur===i)el('score-error').hidden=false;
+  };
+  img.src=song.previewWidth?'score-preview/'+i+'.webp':fullScoreURL(i);
   scoreImages.set(i,img);
   while (scoreImages.size > 2){
     var victim = Array.from(scoreImages.keys()).find(function(k){return k !== cur && k !== i;});
@@ -2188,6 +2220,7 @@ function prepareScore(i){
     var released = scoreImages.get(victim);
     scoreImages.delete(victim);
     released.onload = null;
+    if(released.fullImage){released.fullImage.onload=null;released.fullImage.removeAttribute('src');}
     released.removeAttribute('src'); // Cancel abandoned loads during rapid switching.
   }
   if (img.decode) img.decode().catch(function(){});
@@ -2228,6 +2261,7 @@ function openDetail(i){
   document.body.style.overflow = 'hidden';
   applyZoom();
   el('dt-canvas').scrollTop = 0; el('dt-canvas').scrollLeft = 0;
+  if(img.complete && img.naturalWidth)upgradeScore(i,img);
   saveState();
 }
 function closeDetail(){
@@ -2263,7 +2297,7 @@ function pctToSlider(p){
 function applyZoom(){
   var img = el('dt-img'), box = el('dt-canvas');
   var avail = Math.max(80, box.clientWidth - 14);
-  var nat = img.naturalWidth || 0;              // 原图自然像素宽，作为 100% 基准
+  var nat = +img.dataset.fullWidth || img.naturalWidth || 0; // 预览与原图使用相同缩放基准
   var w;
   if (zoom === 0 || !nat){                      // 0 = 适应宽度（图片未加载时也先按适宽显示）
     w = avail;
@@ -2284,7 +2318,7 @@ function applyZoom(){
 /* 适应宽度时对应的比例（相对原图像素），供从「适应」直接放大时做起点 */
 function fitZoomPercent(){
   var img = el('dt-img'), box = el('dt-canvas');
-  var nat = img.naturalWidth || 0;
+  var nat = +img.dataset.fullWidth || img.naturalWidth || 0;
   if (!nat) return 100;
   return Math.max(80, box.clientWidth - 14) / nat * 100;
 }

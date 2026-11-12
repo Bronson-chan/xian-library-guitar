@@ -7,6 +7,7 @@ const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'),
 if (meta.songs.length < 162 || meta.totalFiles !== meta.songs.length || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 162 distinct songs and a matching catalog total');
 const avatars = JSON.parse(await readFile(join(root, 'workbuddy/source/img_report.json'), 'utf8')).avatar_map;
 for (const song of meta.songs) {
+  if (song.i >= 157 && (!song.previewWidth || !(await stat(join(root,'workbuddy/site/score-preview',song.i+'.webp'))).size)) throw Error('Missing fast preview: '+song.t);
   // Every song added since the handoff needs verified recording metadata and real album artwork.
   if (song.i >= 156) {
     if (!song.a || !song.album || !song.albumArtist || !song.artworkVerified || !song.artworkSource?.startsWith('https://') || !song.trackSource?.startsWith('https://') || !song.coverPath?.startsWith('album-art/')) throw Error(`Verify singer, recording album and real artwork before publishing ${song.t}`);
@@ -50,6 +51,7 @@ await writeFile(join(output,'sw.js'),"importScripts('./offline-worker.js?release
 const offline=new Set(['index.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
 for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=original-20261021':''));offline.add(s.coverPath||'assets/covers/'+s.i+'.jpg');}
 const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;
+for(const s of meta.songs)if(s.previewWidth)offline.add('score-preview/'+s.i+'.webp');
 for(const s of originals)if(s.coverUrl)offline.add('legacy/'+s.coverUrl.replace(/^\.\//,''));
 await writeFile(join(output,'offline-manifest.json'),JSON.stringify([...offline]));
 console.log(`Verified ${meta.songs.length} songs, all covers and artist photos; original 6648x3366 score. Previous app preserved at legacy/.`);
