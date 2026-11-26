@@ -5,6 +5,9 @@ self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
 async function download(request){const c=new AbortController(),t=setTimeout(()=>c.abort(),10000);try{const r=await fetch(request,{signal:c.signal});if(!r.ok)throw Error('HTTP '+r.status);return r;}finally{clearTimeout(t);}}
 self.addEventListener('fetch',e=>{
  const req=e.request,u=new URL(req.url);if(req.method!=='GET'||u.origin!==self.location.origin||!u.href.startsWith(scope))return;
+ // The workbench shell must never replace the separate cover-roaming document.
+ // Keep its modules on normal HTTP caching so a new deployment is immediately visible.
+ if(u.pathname.startsWith(new URL('tunnel/',scope).pathname))return;
  if(req.mode==='navigate'&&u.pathname.includes('/legacy/'))return;
  e.respondWith((async()=>{const nav=req.mode==='navigate',c=await caches.open(nav?SHELL:MEDIA),key=nav?shellURL:req.url;
  const hit=await c.match(key)||(!nav?await caches.match(req):undefined);
