@@ -13,3 +13,13 @@ with their respective rights holders.
 
 This is an isolated application preview, not a standalone component library.
 No tunnel code is loaded by the normal workbench homepage or score reader.
+
+Liquid Glass Navigation:
+https://leibox.pantoria.cn/docs/animations/liquid-glass-navigation
+https://leibox.pantoria.cn/ai/packages/liquid-glass-navigation/vanilla.json
+Adaptation by scripts/fetch-glass-navigation.mjs (verified original SHA256):
+retains the official Snell/dispersion optical shader and spring navigation;
+removes demo photograph/font; uses the current album's colour texture; draws
+transparent outside the panel; renders on demand instead of perpetually.
+Menu labels and callbacks connect to existing workbench actions.
+The supplied upstream source attribution comments are retained.

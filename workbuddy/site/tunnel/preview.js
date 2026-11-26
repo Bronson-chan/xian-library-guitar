@@ -38,11 +38,13 @@ function mount(filter){
 }
 document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{offset=0;mount(b.dataset.filter);}));
 el('batch').addEventListener('click',()=>{offset+=48;mount(currentFilter);});
-el('pause').addEventListener('click',()=>{paused=!paused;controller?.update({paused});el('pause').textContent=paused?'继续':'暂停';el('pause').setAttribute('aria-pressed',String(paused));});
+el('pause').addEventListener('click',()=>{paused=!paused;controller?.update({paused});el('pause').textContent=paused?'继续':'暂停';el('pause').setAttribute('aria-pressed',String(paused));el('play-state').textContent=paused?'已暂停':'漫游中';});
 el('open').addEventListener('click',destroy);
 el('song-link').addEventListener('click',destroy);
 addEventListener('pagehide',destroy);
 document.addEventListener('visibilitychange',()=>controller?.update({paused:document.hidden||paused}));
 try{
  const response=await fetch('./catalog.json');if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();mount('all');
+ // The gallery and score links respond first; navigation is an independent module.
+ import('./glass-nav.js').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
 }catch(error){el('status').hidden=false;el('status').textContent='隧道暂时无法启动，请返回工作台。';console.error(error);}
