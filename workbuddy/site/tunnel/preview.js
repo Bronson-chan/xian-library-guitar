@@ -32,7 +32,7 @@ function mount(filter){
  // Blend at the actual 16:9 canvas edges, including ultrawide screens with side space.
  // A static overlay keeps the original rendering and pointer interactions intact.
  const blend=document.createElement('style');
- blend.textContent='.aw-scene{background:#101119}.aw-scene #stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#101119,transparent 14%,transparent 86%,#101119),linear-gradient(180deg,#101119,transparent 7%,transparent 93%,#101119)}';
+ blend.textContent='.aw-scene{background:#101119}.aw-scene #stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#101119,transparent 14%,transparent 86%,#101119),linear-gradient(180deg,#101119,transparent 3%,transparent 93%,#101119)}';
  controller.root.append(blend);
  select(0);
 }
@@ -46,5 +46,5 @@ document.addEventListener('visibilitychange',()=>controller?.update({paused:docu
 try{
  const response=await fetch('./catalog.json');if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();mount('all');
  // The gallery and score links respond first; navigation is an independent module.
- import('./glass-nav.js').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
+ import('./glass-nav.js?v=live-glass-2').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
 }catch(error){el('status').hidden=false;el('status').textContent='隧道暂时无法启动，请返回工作台。';console.error(error);}

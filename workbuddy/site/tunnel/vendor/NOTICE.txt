@@ -19,7 +19,15 @@ https://leibox.pantoria.cn/docs/animations/liquid-glass-navigation
 https://leibox.pantoria.cn/ai/packages/liquid-glass-navigation/vanilla.json
 Adaptation by scripts/fetch-glass-navigation.mjs (verified original SHA256):
 retains the official Snell/dispersion optical shader and spring navigation;
-removes demo photograph/font; uses the current album's colour texture; draws
-transparent outside the panel; renders on demand instead of perpetually.
+removes demo photograph/font; samples an aligned crop of the actual tunnel canvas;
+draws transparent outside the panel; renders on demand instead of perpetually.
 Menu labels and callbacks connect to existing workbench actions.
 The supplied upstream source attribution comments are retained.
+
+2026-11-26 revision: rebuilt from the user's supplied complete React code package
+(optical engine is framework-independent). source-receipt.json records original
+file SHA256 values. Retains Snell 1.52, five-band dispersion, squircle normals,
+38px optical bevel and spring state machine. Screen-aligned UVs replace the
+independent garden camera. Removes preblur/double darkening; adjusts absorption
+for the existing dark tunnel. Live crop sampling is bounded to 15Hz while a menu
+is open, with one reused canvas; stops when closed/hidden and disposes on exit.

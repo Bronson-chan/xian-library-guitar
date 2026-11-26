@@ -1,0 +1,13 @@
+{
+  "source": "User supplied Liquid Glass Navigation complete code package",
+  "files": [
+    {
+      "path": "LiquidGlassNavigationEngine.js",
+      "sha256": "6f5609d521aedfac208f3025562953c61e9b83f05db12cab0c8d5fd1e73789c1"
+    },
+    {
+      "path": "motion-runtime.ts",
+      "sha256": "3c80f9fd2a4fd35a75acd413155637247fb827f7a2ae42ece3c9bcd2633af1a6"
+    }
+  ]
+}
