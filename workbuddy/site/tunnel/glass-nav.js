@@ -9,9 +9,9 @@ const nav=mountLiquidGlassNavigation(host,{menu:null,height:330,onMenuChange:sam
  else if(label==='暂停漫游'||label==='继续漫游'){
   const shouldPause=label==='暂停漫游';
   if((document.getElementById('pause').getAttribute('aria-pressed')==='true')!==shouldPause)document.getElementById('pause').click();
- }else if(label==='打开工作台')location.href='../';
- else if(label==='我的歌单')location.href='../#lib';
- else if(label==='练习记录')location.href='../#log';
+ }else if(label==='打开工作台')location.href=new URL('../workbench.html',document.baseURI).href;
+ else if(label==='我的歌单')location.href=new URL('../workbench.html#lib',document.baseURI).href;
+ else if(label==='练习记录')location.href=new URL('../workbench.html#log',document.baseURI).href;
  sampleMenu(null);nav.update({menu:null});sync();
 }});
 function sync(){

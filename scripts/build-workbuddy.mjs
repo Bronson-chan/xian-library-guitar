@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -49,11 +49,19 @@ const tunnelCatalog=meta.songs.map(s=>{
  return {...s,cover:'../'+(s.coverPath||original[s.i]||('assets/covers/'+s.i+'.jpg'))};
 });
 await writeFile(join(output,'tunnel/catalog.json'),JSON.stringify(tunnelCatalog));
-const release=createHash('sha256').update(html).digest('hex').slice(0,12);
 const worker=await readFile(join(root,'workbuddy/site/offline-worker.js'),'utf8');
+const gallery=await readFile(join(output,'tunnel/index.html'),'utf8');
+const pwaBoot=`<link rel="manifest" href="../manifest.webmanifest"><meta name="theme-color" content="#101119"><script>
+if(/^#(?:song=\\d+|home|tools|lib|fav|log|tags|learning)$/.test(location.hash))location.replace(new URL('../workbench.html'+location.hash,document.baseURI));
+if('serviceWorker' in navigator){let controlled=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(controlled){controlled=false;location.reload();}});navigator.serviceWorker.register(new URL('../sw.js',document.baseURI),{scope:new URL('../',document.baseURI).pathname,updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});}
+</script>`;
+await writeFile(join(output,'workbench.html'),html);
+await writeFile(join(output,'index.html'),gallery.replace('<head>','<head><base href="./tunnel/">'+pwaBoot));
+const release=createHash('sha256').update(html+gallery+worker+pwaBoot).digest('hex').slice(0,12);
 await writeFile(join(output,'offline-worker.js'),worker.replaceAll('__RELEASE__',release));
 await writeFile(join(output,'sw.js'),"importScripts('./offline-worker.js?release="+release+"');");
-const offline=new Set(['index.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
+const offline=new Set(['index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
+for(const path of await readdir(join(output,'tunnel'),{recursive:true}))if(/\.(js|json|html|css)$/.test(path))offline.add('tunnel/'+path.replaceAll('\\','/'));
 for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=original-20261021':''));offline.add(s.coverPath||'assets/covers/'+s.i+'.jpg');}
 const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;
 for(const s of meta.songs)if(s.previewWidth)offline.add('score-preview/'+s.i+'.webp');

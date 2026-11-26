@@ -14,3 +14,5 @@
 9. 自 id 157 起，新增曲谱须先用 `scripts/make-score-preview.py` 生成快速预览，并在元数据填原图宽度 `previewWidth`。保留高清原件，冷打开优先显示可读谱面，再换高清；发布前检查空缓存首谱耗时和离线清单。
 
 公开曲库资源在仓库和网站上均可被任何人下载。网页中用户自己添加的谱图、练习记录和熟练度只保存在该设备，不会由浏览器自动推送到 GitHub。
+
+10. 正式根网址直接显示封面漫游；构建脚本将原工作台输出为 workbench.html（仍与原媒体同级，localStorage 键与域名不变）。tunnel/ 保留为兼容入口。漫游模块使用 document.baseURI 解析资源；首页与 workbench.html 的 Service Worker 导航缓存必须分别存储，旧 #song/#lib 等链接需兼容跳转。

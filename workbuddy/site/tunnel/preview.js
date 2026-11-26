@@ -7,7 +7,7 @@ function select(index){
  el('cover').hidden=false;el('open-label').textContent='打开曲谱';
  el('cover').src=active.cover;el('cover').alt=active.t+' 专辑封面';
  el('title').textContent=active.t;el('artist').textContent=active.a;
- el('open').href=el('song-link').href='../#song='+active.i;
+ el('open').href=el('song-link').href='../workbench.html#song='+active.i;
  el('song-link').setAttribute('aria-label','打开《'+active.t+'》的曲谱');
 }
 function destroy(){controller?.destroy();controller=null;}
@@ -25,10 +25,10 @@ function mount(filter){
  if(offset>=matches.length)offset=0;
  pool=matches.slice(offset,offset+48);el('count').textContent=matches.length+' 首'+(matches.length>48?' · 本组 '+(offset+1)+'–'+Math.min(offset+48,matches.length):'');
  document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===filter)));
- if(!pool.length){el('status').hidden=false;el('status').textContent='这个分类暂时没有歌曲，试试其他分类。';active=null;el('title').textContent='暂无曲目';el('artist').textContent='';el('cover').hidden=true;el('cover').removeAttribute('src');el('open-label').textContent='返回工作台';el('open').href=el('song-link').href='../';return;}
+ if(!pool.length){el('status').hidden=false;el('status').textContent='这个分类暂时没有歌曲，试试其他分类。';active=null;el('title').textContent='暂无曲目';el('artist').textContent='';el('cover').hidden=true;el('cover').removeAttribute('src');el('open-label').textContent='返回工作台';el('open').href=el('song-link').href='../workbench.html';return;}
  el('status').hidden=true;
  const height=Math.max(300,el('stage').clientHeight);
- controller=mountAlbumCoverTunnel(el('tunnel'),{images:pool.map(s=>({src:new URL(s.cover,location.href).href,alt:s.t+' · '+s.a})),height,autoTravel:false,paused,active:0,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,onSelect:select});
+ controller=mountAlbumCoverTunnel(el('tunnel'),{images:pool.map(s=>({src:new URL(s.cover,document.baseURI).href,alt:s.t+' · '+s.a})),height,autoTravel:false,paused,active:0,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,onSelect:select});
  // Blend at the actual 16:9 canvas edges, including ultrawide screens with side space.
  // A static overlay keeps the original rendering and pointer interactions intact.
  const blend=document.createElement('style');
@@ -46,5 +46,5 @@ document.addEventListener('visibilitychange',()=>controller?.update({paused:docu
 try{
  const response=await fetch('./catalog.json');if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();mount('all');
  // The gallery and score links respond first; navigation is an independent module.
- import('./glass-nav.js?v=live-glass-2').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
+ import('./glass-nav.js?v=landing-1').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
 }catch(error){el('status').hidden=false;el('status').textContent='隧道暂时无法启动，请返回工作台。';console.error(error);}
