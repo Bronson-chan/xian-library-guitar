@@ -57,4 +57,6 @@ function visibility(){clearTimeout(timer);timer=null;if(!document.hidden&&sampli
 document.addEventListener('visibilitychange',visibility);
 cover.addEventListener('load',captureFrame);captureFrame();sync();
 document.getElementById('nav-fallback').hidden=true;
-addEventListener('pagehide',()=>{disposed=true;clearTimeout(timer);cover.removeEventListener('load',captureFrame);document.removeEventListener('visibilitychange',visibility);nav.destroy();snapshot.width=snapshot.height=1;},{once:true});
+addEventListener('xian-cover-active',e=>{if(!e.detail)sampleMenu(null);nav.update({menu:null,paused:!e.detail});});
+addEventListener('pagehide',e=>{sampleMenu(null);if(e.persisted){nav.update({paused:true});return;}disposed=true;clearTimeout(timer);cover.removeEventListener('load',captureFrame);document.removeEventListener('visibilitychange',visibility);nav.destroy();snapshot.width=snapshot.height=1;});
+addEventListener('pageshow',e=>{if(e.persisted&&!disposed)nav.update({paused:false});});

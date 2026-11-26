@@ -31,3 +31,5 @@ file SHA256 values. Retains Snell 1.52, five-band dispersion, squircle normals,
 independent garden camera. Removes preblur/double darkening; adjusts absorption
 for the existing dark tunnel. Live crop sampling is bounded to 15Hz while a menu
 is open, with one reused canvas; stops when closed/hidden and disposes on exit.
+
+Performance integration: 320px texture layers, six concurrent cover decodes, versioned cancellation, ready getter for atomic swaps. Keep the displayed texture until replacements are ready; retain surfaces across persisted page transitions. The supplied Three.js optical/interaction core remains in use.

@@ -5,5 +5,7 @@ assets/
 catalog/
 packed/*.tar
 workbuddy/site/assets/
+workbuddy/site/tunnel/covers/
+workbuddy/site/score-preview/*.webp
 .DS_Store
 *.log

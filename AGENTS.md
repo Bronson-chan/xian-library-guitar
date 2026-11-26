@@ -16,3 +16,5 @@
 公开曲库资源在仓库和网站上均可被任何人下载。网页中用户自己添加的谱图、练习记录和熟练度只保存在该设备，不会由浏览器自动推送到 GitHub。
 
 10. 正式根网址直接显示封面漫游；构建脚本将原工作台输出为 workbench.html（仍与原媒体同级，localStorage 键与域名不变）。tunnel/ 保留为兼容入口。漫游模块使用 document.baseURI 解析资源；首页与 workbench.html 的 Service Worker 导航缓存必须分别存储，旧 #song/#lib 等链接需兼容跳转。
+
+11. 全部曲谱均有 previewWidth 与 score-preview 可读小图；原图保留。运行 scripts/make-fast-library.py 更新新增条目后，用 node scripts/pack-fast-library.mjs 打包 fast-library.tar.part-*，Actions 需解包后构建。漫游切组复用 WebGL，页面恢复不能销毁画布；开谱复用一个同源阅读器，#prepare 只预备图片，严禁记录浏览或练习。工作台和阅读器必须保留明确的返回封面入口。

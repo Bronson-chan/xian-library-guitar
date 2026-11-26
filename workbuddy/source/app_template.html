@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
+<head><style>html.reader-prepare .app{display:none}</style><script>if(/^#(?:prepare|song)=/.test(location.hash))document.documentElement.classList.add("reader-prepare");</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>弦库 · 吉他谱管理台</title>
@@ -748,7 +748,7 @@ button:not(:disabled):active{transform:translateY(1px)}
     </div>
     <nav class="nav" id="nav">
       <button class="on" data-view="home"><svg viewBox="0 0 24 24"><path d="M12 3.2c2.6 3.3 5.6 5.7 5.6 9.5a5.6 5.6 0 1 1-11.2 0c0-2.4 1.5-4.1 3-5.7.4 1.3 1.1 2.1 2 2.5-.3-2.4.1-4.2.6-6.3z"/></svg>发现</button>
-      <a href="./" aria-label="封面漫游"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M4 5h12M4 5v12M10 20h10V10"/></svg>封面漫游</a>
+      <a href="./" aria-label="返回封面"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M4 5h12M4 5v12M10 20h10V10"/></svg>返回封面</a>
       <button data-view="log"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12.2l2.8 2.8 5.6-5.6"/></svg>我的练习</button>
       <button data-view="lib"><svg viewBox="0 0 24 24"><path d="M4 6.5h11M4 12h11M4 17.5h7"/><circle cx="18" cy="16" r="3"/><path d="M21 16V7l-3 .8"/></svg>歌单</button>
       <button data-view="artists"><svg viewBox="0 0 24 24"><rect x="9.2" y="3" width="5.6" height="10.4" rx="2.8"/><path d="M5.6 11.6a6.4 6.4 0 0 0 12.8 0"/><path d="M12 18.2v2.8"/></svg>歌手</button>
@@ -1088,7 +1088,7 @@ button:not(:disabled):active{transform:translateY(1px)}
 <div class="detail" id="detail" hidden>
   <div class="dt-shell">
     <div class="dt-bar">
-      <button class="dt-back" id="dt-back"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="m15 18-6-6 6-6"/></svg>返回</button>
+      <a class="dt-back cover-return" href="./" aria-label="返回封面"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8"><path d="m12 3 9 8h-3v10H6V11H3z"/></svg>返回封面</a><button class="dt-back" id="dt-back"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="m15 18-6-6 6-6"/></svg>工作台</button>
       <button class="dt-cover-btn" id="dt-cover-btn" title="更换封面"><img class="dt-cover" id="dt-cover" alt="" src=""></button>
       <div class="dt-name"><b id="dt-title">—</b><div class="dt-subwrap" id="dt-subwrap"><span id="dt-sub">—</span></div></div>
       <div class="dt-tools">
@@ -2266,6 +2266,7 @@ function openDetail(i){
   saveState();
 }
 function closeDetail(){
+  document.documentElement.classList.remove("reader-prepare");
   stopMotion();
   el('detail').hidden = true;
   document.body.style.overflow = '';
@@ -2926,8 +2927,9 @@ function boot(){
   seedNewLearn();
   bind();
   initFilters();
-  refreshAll();
-  applyHash();
+  var preparing=(location.hash||'').match(/^#prepare=(\d+)$/);
+  if(preparing){prepareScore(+preparing[1]);if(parent!==window)parent.postMessage({type:'XIAN_READER_READY'},location.origin);return;}
+  if(/^#song=/.test(location.hash))applyHash();else{refreshAll();applyHash();}
   if (view === 'home' && el('detail').hidden) revealMotion(el('v-home'),280,4);
   window.addEventListener('hashchange', applyHash);
   setTimeout(function(){
@@ -2937,6 +2939,24 @@ function boot(){
     }
   }, 700);
 }
+
+// Same-origin cover page commands; background preparation never opens a score.
+window.addEventListener('message',function(event){
+ if(parent===window||event.source!==parent||event.origin!==location.origin)return;
+ var data=event.data||{};
+ if(data.type==='XIAN_HIDE_READER'){stopMotion();var hiddenImage=el('dt-img');if(hiddenImage.fullImage&&!hiddenImage.fullImage.complete){hiddenImage.fullImage.onload=null;hiddenImage.fullImage.removeAttribute('src');hiddenImage.fullImage=null;}return;}
+ if(data.type==='XIAN_PREPARE_SCORE'){prepareScore(+data.id);return;}
+ if(data.type==='XIAN_OPEN_SCORE'){
+  openDetail(+data.id);var token=data.request,img=el('dt-img');
+  function notify(){if(cur===+data.id)parent.postMessage({type:'XIAN_SCORE_READY',request:token},location.origin);}
+  if(img.complete&&img.naturalWidth)notify();else img.addEventListener('load',notify,{once:true});
+ }
+});
+document.addEventListener('click',function(e){
+ var link=e.target.closest&&e.target.closest('a[aria-label="返回封面"]');
+ if(link&&parent!==window){e.preventDefault();parent.postMessage({type:'XIAN_RETURN_COVER'},location.origin);}
+});
+document.addEventListener('keydown',function(e){if(parent!==window&&e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();parent.postMessage({type:'XIAN_RETURN_COVER'},location.origin);}},true);
 document.addEventListener('DOMContentLoaded', boot);
 if (document.readyState !== 'loading') boot();
 </script>

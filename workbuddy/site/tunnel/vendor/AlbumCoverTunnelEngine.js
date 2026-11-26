@@ -17,6 +17,7 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
   let options = { ...optionsBase, ...initial };
   const normalizeImages = (images) => Array.isArray(images) && images.length ? images.slice(0, 96).map((image, i) => typeof image === "string" ? { src: image, alt: "\u5C01\u9762 " + (i + 1) } : { src: image.src, alt: image.alt || "\u5C01\u9762 " + (i + 1) }) : DEFAULT_COVERS;
   let imageList = normalizeImages(initial.images), loadVersion = 0;
+  const pendingImages=new Set();
   const s = createSurface(target, { css: CSS, markup: MARKUP, width: 1200, height: 675, responsive: true }, options);
   const root = s.root, doc = target.ownerDocument, win = doc.defaultView, document = s.document, Image = win.Image, devicePixelRatio = win.devicePixelRatio || 1;
   const sceneEl = root.querySelector(".aw-scene"), errorEl = root.querySelector(".aw-error"), statusEl = root.querySelector(".aw-status");
@@ -96,7 +97,7 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
     }));
     camera.add(dust);
   }
-  const TS = 512;
+  const TS = 320;
   function createLayerCanvas() {
     const cv = document.createElement("canvas");
     cv.width = cv.height = TS;
@@ -105,8 +106,8 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
   async function writeCoverLayer(g, data, index, src) {
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = src;
-    await img.decode();
+    pendingImages.add(img);img.src = src;
+    try{await img.decode();}finally{pendingImages.delete(img);}
     if (dead) throw new Error("destroyed");
     g.clearRect(0, 0, TS, TS);
     g.drawImage(img, 0, 0, TS, TS);
@@ -115,9 +116,16 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
   async function buildArray(images) {
     const g = createLayerCanvas();
     const data = new Uint8Array(TS * TS * 4 * images.length);
-    for (let i = 0; i < images.length; i++) {
-      await writeCoverLayer(g, data, i, images[i].src);
-    }
+    const version=loadVersion;
+    let cursor=0,success=0;
+    await Promise.all(Array.from({length:Math.min(6,images.length)},async()=>{
+      while(cursor<images.length&&!dead&&version===loadVersion){
+        const index=cursor++;
+        try{await writeCoverLayer(g,data,index,images[index].src);success++;}
+        catch{ /* One unavailable cover must not blank the whole scene. */ }
+      }
+    }));
+    if(!success&&!dead&&version===loadVersion)throw new Error('No covers available');
     const t = new THREE.DataArrayTexture(data, TS, TS, images.length);
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.magFilter = THREE.LinearFilter;
@@ -651,6 +659,7 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
   }
   function loadImages(images) {
     const version = ++loadVersion;
+    pendingImages.forEach(img=>img.removeAttribute("src"));pendingImages.clear();
     return buildArray(images).then((texture) => {
       if (dead || version !== loadVersion) {
         texture.dispose();
@@ -702,7 +711,7 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
       wake();
     }
   }
-  const ready = loadImages(imageList);
+  let ready = loadImages(imageList);
   s.setTimeout(() => {
     root.querySelector("#hint").style.opacity = "0";
   }, 9e3);
@@ -730,7 +739,7 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
     renderer.dispose();
     renderer.forceContextLoss();
   });
-  return { ...s.controller, ready, upgradeCovers, update(next = {}) {
+  return { ...s.controller, get ready(){return ready;}, upgradeCovers, update(next = {}) {
     if (dead) return;
     const activeChanged = next.active !== void 0 && next.active !== options.active, imagesChanged = Object.hasOwn(next, "images") && next.images !== options.images;
     options = { ...options, ...next };
@@ -738,7 +747,7 @@ function createAlbumCoverTunnel(target, initial = {}, CSS, MARKUP) {
     sceneEl.dataset.theme = options.theme;
     if (options.theme === "light") PR = Math.min(PR, 0.75);
     resize();
-    if (imagesChanged) void loadImages(normalizeImages(next.images));
+    if (imagesChanged) ready = loadImages(normalizeImages(next.images));
     else if (activeChanged && loaded) applyActive(next.active);
     stop();
     wake();

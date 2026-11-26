@@ -7,7 +7,8 @@ const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'),
 if (meta.songs.length < 162 || meta.totalFiles !== meta.songs.length || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 162 distinct songs and a matching catalog total');
 const avatars = JSON.parse(await readFile(join(root, 'workbuddy/source/img_report.json'), 'utf8')).avatar_map;
 for (const song of meta.songs) {
-  if (song.i >= 157 && (!song.previewWidth || !(await stat(join(root,'workbuddy/site/score-preview',song.i+'.webp'))).size)) throw Error('Missing fast preview: '+song.t);
+  if (!song.previewWidth || !(await stat(join(root,'workbuddy/site/score-preview',song.i+'.webp'))).size) throw Error('Missing fast preview: '+song.t);
+  if (!(await stat(join(root,'workbuddy/site/tunnel/covers',song.i+'.webp'))).size) throw Error('Missing small cover: '+song.t);
   // Every song added since the handoff needs verified recording metadata and real album artwork.
   if (song.i >= 156) {
     if (!song.a || !song.album || !song.albumArtist || !song.artworkVerified || !song.artworkSource?.startsWith('https://') || !song.trackSource?.startsWith('https://') || !song.coverPath?.startsWith('album-art/')) throw Error(`Verify singer, recording album and real artwork before publishing ${song.t}`);
@@ -46,7 +47,7 @@ await rename(legacy, join(output, 'legacy'));
 await writeFile(join(output, '.nojekyll'), '');
 const original=JSON.parse(html.match(/var VERIFIED_ALBUM_COVERS = (.*);/)[1]);
 const tunnelCatalog=meta.songs.map(s=>{
- return {...s,cover:'../'+(s.coverPath||original[s.i]||('assets/covers/'+s.i+'.jpg'))};
+ return {i:s.i,t:s.t,a:s.a,f:s.f,nl:s.nl,previewWidth:s.previewWidth,cover:'./covers/'+s.i+'.webp'};
 });
 await writeFile(join(output,'tunnel/catalog.json'),JSON.stringify(tunnelCatalog));
 const worker=await readFile(join(root,'workbuddy/site/offline-worker.js'),'utf8');
@@ -61,7 +62,7 @@ const release=createHash('sha256').update(html+gallery+worker+pwaBoot).digest('h
 await writeFile(join(output,'offline-worker.js'),worker.replaceAll('__RELEASE__',release));
 await writeFile(join(output,'sw.js'),"importScripts('./offline-worker.js?release="+release+"');");
 const offline=new Set(['index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
-for(const path of await readdir(join(output,'tunnel'),{recursive:true}))if(/\.(js|json|html|css)$/.test(path))offline.add('tunnel/'+path.replaceAll('\\','/'));
+for(const path of await readdir(join(output,'tunnel'),{recursive:true}))if(/\.(js|json|html|css|webp)$/.test(path))offline.add('tunnel/'+path.replaceAll('\\','/'));
 for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=original-20261021':''));offline.add(s.coverPath||'assets/covers/'+s.i+'.jpg');}
 const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;
 for(const s of meta.songs)if(s.previewWidth)offline.add('score-preview/'+s.i+'.webp');

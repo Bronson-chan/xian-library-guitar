@@ -34,6 +34,8 @@ jobs:
           tar -xf packed/site-assets.tar
           cat packed/workbuddy-assets.tar.part-* > packed/workbuddy-assets.tar
           tar -xf packed/workbuddy-assets.tar
+          cat packed/fast-library.tar.part-* > packed/fast-library.tar
+          tar -xf packed/fast-library.tar
       - name: Build WorkBuddy application
         run: python3 workbuddy/source/build.py
       - name: Build and validate static PWA
