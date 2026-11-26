@@ -1,6 +1,6 @@
 const SHELL='xian-shell-__RELEASE__',MEDIA='xian-offline-media-v2',scope=self.registration.scope;
 const absolute=p=>new URL(p,scope).href,shellURL=absolute('index.html');
-self.addEventListener('install',e=>e.waitUntil((async()=>{const c=await caches.open(SHELL);await c.addAll(['./','index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png'].map(absolute));await self.skipWaiting();})()));
+self.addEventListener('install',e=>e.waitUntil((async()=>{const c=await caches.open(SHELL);await c.addAll(['./','index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png'].map(p=>new Request(absolute(p),{cache:'reload'})));await self.skipWaiting();})()));
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
 async function download(request){const c=new AbortController(),t=setTimeout(()=>c.abort(),10000);try{const r=await fetch(request,{signal:c.signal});if(!r.ok)throw Error('HTTP '+r.status);return r;}finally{clearTimeout(t);}}
 self.addEventListener('fetch',e=>{
