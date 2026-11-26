@@ -44,6 +44,11 @@ await mkdir(output);
 await cp(join(root, 'workbuddy/site'), output, { recursive: true });
 await rename(legacy, join(output, 'legacy'));
 await writeFile(join(output, '.nojekyll'), '');
+const original=JSON.parse(html.match(/var VERIFIED_ALBUM_COVERS = (.*);/)[1]);
+const tunnelCatalog=meta.songs.map(s=>{
+ return {...s,cover:'../'+(s.coverPath||original[s.i]||('assets/covers/'+s.i+'.jpg'))};
+});
+await writeFile(join(output,'tunnel/catalog.json'),JSON.stringify(tunnelCatalog));
 const release=createHash('sha256').update(html).digest('hex').slice(0,12);
 const worker=await readFile(join(root,'workbuddy/site/offline-worker.js'),'utf8');
 await writeFile(join(output,'offline-worker.js'),worker.replaceAll('__RELEASE__',release));

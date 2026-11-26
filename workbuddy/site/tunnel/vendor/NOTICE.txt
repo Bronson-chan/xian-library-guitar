@@ -1,0 +1,15 @@
+Album Cover Tunnel preview for the guitar workbench
+
+Official component: https://leibox.pantoria.cn/docs/animations/album-cover-tunnel
+Source package: https://leibox.pantoria.cn/ai/packages/album-cover-tunnel/vanilla.json
+Component author: LeiShiFu; upstream license: LEIBOX-LICENSE.md.
+Three.js 0.185.1: see three/LICENSE.
+
+Original source checksums are verified by scripts/fetch-tunnel.mjs.
+Local adaptations: remove unused embedded demonstration covers; add the .js
+extension to the runtime import; strip TypeScript types for browser execution.
+The application supplies its existing song artwork. Artwork rights remain
+with their respective rights holders.
+
+This is an isolated application preview, not a standalone component library.
+No tunnel code is loaded by the normal workbench homepage or score reader.

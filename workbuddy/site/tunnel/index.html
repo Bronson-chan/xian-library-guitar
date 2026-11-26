@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>弦库 · 封面漫游预览</title>
+<style>
+:root{color-scheme:dark;font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#101119;color:#f6f2ed}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0}button,a,input{font:inherit}button,a{color:inherit}button{cursor:pointer}
+.shell{height:100dvh;min-height:620px;display:grid;grid-template-rows:auto auto 1fr auto;max-width:1800px;margin:auto;padding:24px 36px 20px}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px}header a{text-decoration:none;color:#aaa7b2;font-size:13px}.brand{font-size:18px;font-weight:650;letter-spacing:2px}.brand span{font-size:12px;letter-spacing:0;color:#a69eaf;margin-left:15px}
+.toolbar{display:flex;align-items:center;gap:7px;padding:24px 0 15px;flex-wrap:wrap}.toolbar button,.utility{background:transparent;border:1px solid #393842;border-radius:8px;padding:8px 16px;color:#bcb6c6;font-size:13px}.toolbar button[aria-pressed=true]{background:#f5d1a9;border-color:#f5d1a9;color:#30231b}.spacer{flex:1}.note{font-size:12px;color:#a29aa9}
+#stage{min-height:300px;position:relative;overflow:hidden;border-radius:16px;background:#101119}
+#status{position:absolute;inset:0;display:grid;place-content:center;pointer-events:none;color:#aca2b8;font-size:14px;z-index:2}
+.bottom{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-top:20px}
+.song{display:flex;gap:14px;align-items:center;min-width:0}.song img{width:52px;height:52px;object-fit:cover;border-radius:7px}.song h1{font-size:20px;margin:0 0 6px;font-weight:600}.song p{font-size:13px;color:#aca4b5;margin:0}.action{display:flex;align-items:center;gap:15px}.action a{background:#f5d1a9;color:#30231b;padding:13px 25px;border-radius:9px;text-decoration:none;font-size:14px;font-weight:650}.hint{font-size:12px;color:#9f97aa}
+button:focus-visible,a:focus-visible{outline:2px solid #f5d1a9;outline-offset:4px}
+@media(max-width:650px){.shell{padding:18px 14px;min-height:560px}.brand span{display:none}.toolbar{padding-top:18px}.toolbar button{padding:8px 11px}.note{display:none}.hint{display:none}.song h1{font-size:17px}.action a{padding:12px 15px}.bottom{gap:10px}}
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}</script>
+</head>
+<body><div class="shell">
+<header><div class="brand">弦库<span>封面漫游 · 独立预览</span></div><a href="../">返回工作台</a></header>
+<div class="toolbar" aria-label="漫游曲目范围">
+<button data-filter="all" aria-pressed="true">全部</button><button data-filter="learning" aria-pressed="false">新学</button><button data-filter="known" aria-pressed="false">拿手歌</button><button data-filter="stale" aria-pressed="false">很久没弹</button>
+<span class="spacer"></span><span class="note" id="count"></span><button id="batch">换一组</button><button id="pause" aria-pressed="false">暂停</button>
+</div>
+<main id="stage" aria-label="专辑封面三维隧道"><div id="status" role="status">正在准备你的封面隧道…</div><div id="tunnel"></div></main>
+<footer class="bottom"><div class="song"><img id="cover" alt=""><div><h1 id="title">选择一张封面</h1><p id="artist">听过的旋律，再弹一次。</p></div></div><div class="action"><span class="hint">滚轮 / 拖动穿行 · 点击封面选歌</span><a id="open" href="../">打开曲谱</a></div></footer>
+</div><script type="module" src="./preview.js"></script></body></html>
