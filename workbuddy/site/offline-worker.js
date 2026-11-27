@@ -1,4 +1,4 @@
-const SHELL='xian-shell-__RELEASE__',MEDIA='xian-offline-media-v2',scope=self.registration.scope;
+const SHELL='xian-shell-__RELEASE__',MEDIA='xian-offline-media-v2',COVERS='xian-cover-art-v1',scope=self.registration.scope;
 const absolute=p=>new URL(p,scope).href,shellURL=absolute('index.html');
 self.addEventListener('install',e=>e.waitUntil((async()=>{const c=await caches.open(SHELL);await c.addAll(['./','index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png'].map(p=>new Request(absolute(p),{cache:'reload'})));await self.skipWaiting();})()));
 self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
@@ -8,12 +8,16 @@ self.addEventListener('fetch',e=>{
  // The workbench shell must never replace the separate cover-roaming document.
  // Keep its modules on normal HTTP caching so a new deployment is immediately visible.
  if(u.pathname.startsWith(new URL('tunnel/',scope).pathname)){
-  if(['catalog.json','albums.json'].some(name=>u.pathname===new URL('tunnel/'+name,scope).pathname)&&u.searchParams.has('v')){
+  const coverArt=u.pathname.startsWith(new URL('tunnel/covers/',scope).pathname);
+  if((coverArt||u.pathname===new URL('tunnel/catalog.json',scope).pathname)&&u.searchParams.has('v')){
    e.respondWith((async()=>{
-    const c=await caches.open(SHELL),hit=await c.match(req)||await caches.match(req);
+    const c=await caches.open(coverArt?COVERS:SHELL),hit=await c.match(req)||await caches.match(req);
     if(hit)return hit;
-    try{const response=await download(req);await c.put(req,response.clone());return response;}
-    catch{return await caches.match(req,{ignoreSearch:true})||(u.pathname.endsWith('/albums.json')&&await caches.match(absolute('tunnel/catalog.json'),{ignoreSearch:true}))||Response.error();}
+    try{
+     const response=await download(req);
+     e.waitUntil(c.put(req,response.clone()).catch(()=>{}));
+     return response;
+    }catch{return await caches.match(req,{ignoreSearch:true})||Response.error();}
    })());return;
   }
   e.respondWith(fetch(req).catch(async()=>await caches.match(req,{ignoreSearch:true})||Response.error()));return;

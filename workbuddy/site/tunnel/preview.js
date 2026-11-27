@@ -1,23 +1,25 @@
 import {prepareReader,openReader} from './reader-bridge.js?v=fast-1';
 const albumMode=new URLSearchParams(location.search).get('view')==='album';
 const engineReady=albumMode?null:import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
-const loadAlbumFlow=()=>import('./album-flow.js?v=cover-3');
+const loadAlbumFlow=()=>import('./album-flow.js?v=sharp-1');
 const albumFlowReady=albumMode?loadAlbumFlow():null;
 const el=id=>document.getElementById(id);
 let controller,pool=[],active=null,paused=false,records={},catalog=[],offset=0,currentFilter='all',mountVersion=0,reading=false;
 let albumWarmup;
-function warmAlbumCatalog(){
- if(albumWarmup||albumMode)return;
- const url=new URL(el('cover-catalog').href);
- url.pathname=url.pathname.replace(/catalog\.json$/,'albums.json');
- albumWarmup=fetch(url,{priority:'low'}).then(response=>{
-  if(!response.ok)throw Error('Album preview unavailable');
-  return response.arrayBuffer();
- }).then(()=>true).catch(()=>{albumWarmup=null;});
+function warmAlbumCovers(){
+ if(albumWarmup||albumMode||!catalog.length)return;
+ albumWarmup=loadAlbumFlow().then(async ({albumLayout,coverWindow})=>{
+  const {albums,firstIndex}=albumLayout(catalog);
+  await Promise.allSettled(coverWindow(firstIndex,albums.length).map(i=>{
+   const image=new Image();
+   image.fetchPriority='low';image.src=albums[i].cover;
+   return image.decode();
+  }));
+ }).catch(()=>{albumWarmup=null;});
 }
 if(!albumMode){
- el('album-mode').addEventListener('pointerenter',warmAlbumCatalog);
- el('album-mode').addEventListener('focus',warmAlbumCatalog);
+ el('album-mode').addEventListener('pointerenter',warmAlbumCovers);
+ el('album-mode').addEventListener('focus',warmAlbumCovers);
 }
 try{records=JSON.parse(localStorage.getItem('wb_xiangu_v1')||'{}');}catch{}
 function select(index){selectSong(pool[index]);}
@@ -53,7 +55,7 @@ async function mount(filter){
   if(controller.root.querySelector('[data-ready=true]')){
    el('first-frame').hidden=true;
    if(!navigator.connection?.saveData&&!navigator.connection?.effectiveType?.endsWith('2g')){
-    setTimeout(()=>{if(!document.hidden&&!reading)warmAlbumCatalog();},750);
+    setTimeout(()=>{if(!document.hidden&&!reading)warmAlbumCovers();},750);
    }
   }
  }catch(error){el('status').hidden=false;el('status').textContent='封面暂未加载，仍可打开曲谱或进入工作台。';console.error(error);}
@@ -76,15 +78,11 @@ if(albumMode){
 try{
  const response=await fetch(el('cover-catalog').href);if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();
  if(albumMode){
-  const {mountAlbumFlow}=await albumFlowReady;
-  const groups=new Map();
-  for(const song of catalog){
-   const key=song.a+'|'+(song.album||song.coverGroup||song.i);
-   if(!groups.has(key))groups.set(key,{artist:song.a,album:song.album,cover:song.cover,thumb:song.thumb,songs:[]});
-   groups.get(key).songs.push(song);
-  }
-  const albums=[...groups.values()].sort((a,b)=>Number(b.songs.length>1)-Number(a.songs.length>1));
-  mountAlbumFlow(el('album-view'),albums,{onSelect:selectSong,onOpen:openReader});el('status').hidden=true;
+  const {albumLayout,mountAlbumFlow}=await albumFlowReady;
+  mountAlbumFlow(el('album-view'),albumLayout(catalog),{onSelect:song=>{
+   el('status').hidden=true;
+   selectSong(song);
+  },onOpen:openReader});
  }else mount('all');
  if(!albumMode)import('./glass-nav.js?v=fast-1').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
 }catch(error){el('status').hidden=false;el('status').textContent='曲库暂未加载，请进入工作台。';console.error(error);}

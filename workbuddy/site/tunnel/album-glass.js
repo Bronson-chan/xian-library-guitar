@@ -40,7 +40,7 @@ export function createAlbumGlass(){
   const [ox,oy]=style.perspectiveOrigin.split(' ').map(parseFloat);
   for(const {card,front,back} of [...cards].sort((a,b)=>Number(a.card.style.zIndex)-Number(b.card.style.zIndex))){
    if(back===panel)continue;
-   const image=front.querySelector('img');if(!image.complete||!image.naturalWidth)continue;
+   const image=front.querySelector('img');if(!image?.complete||!image.naturalWidth)continue;
    const bounds=front.getBoundingClientRect();if(bounds.right<rect.left||bounds.left>rect.right)continue;
    const matrix=new DOMMatrix(getComputedStyle(card).transform),size=card.offsetWidth;
    const centerX=card.offsetLeft+size/2,centerY=card.offsetTop+size/2;

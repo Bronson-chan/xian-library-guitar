@@ -4,13 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'), 'utf8'));
-const coverThumbnails = JSON.parse(await readFile(join(root, 'workbuddy/source/cover-thumbnails.json'), 'utf8'));
 if (meta.songs.length < 162 || meta.totalFiles !== meta.songs.length || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 162 distinct songs and a matching catalog total');
 const avatars = JSON.parse(await readFile(join(root, 'workbuddy/source/img_report.json'), 'utf8')).avatar_map;
 for (const song of meta.songs) {
   if (!song.previewWidth || !(await stat(join(root,'workbuddy/site/score-preview',song.i+'.webp'))).size) throw Error('Missing fast preview: '+song.t);
   if (!(await stat(join(root,'workbuddy/site/tunnel/covers',song.i+'.webp'))).size) throw Error('Missing small cover: '+song.t);
-  if (!coverThumbnails[song.i]) throw Error('Run scripts/make-fast-library.py to generate the cover thumbnail for '+song.t);
   // Every song added since the handoff needs verified recording metadata and real album artwork.
   if (song.i >= 156) {
     if (!song.a || !song.album || !song.albumArtist || !song.artworkVerified || !song.artworkSource?.startsWith('https://') || !song.trackSource?.startsWith('https://') || !song.coverPath?.startsWith('album-art/')) throw Error(`Verify singer, recording album and real artwork before publishing ${song.t}`);
@@ -53,10 +51,8 @@ const tunnelCatalog=await Promise.all(meta.songs.map(async s=>{
  return {i:s.i,t:s.t,a:s.a,f:s.f,nl:s.nl,previewWidth:s.previewWidth,cover:'./covers/'+s.i+'.webp',album:s.album||'',coverGroup};
 }));
 const catalogData=JSON.stringify(tunnelCatalog);
-const albumData=JSON.stringify(tunnelCatalog.map(song=>({...song,thumb:'data:image/webp;base64,'+coverThumbnails[song.i]})));
-const catalogVersion=createHash('sha256').update(catalogData).update(albumData).digest('hex').slice(0,12);
+const catalogVersion=createHash('sha256').update(catalogData).digest('hex').slice(0,12);
 await writeFile(join(output,'tunnel/catalog.json'),catalogData);
-await writeFile(join(output,'tunnel/albums.json'),albumData);
 const worker=await readFile(join(root,'workbuddy/site/offline-worker.js'),'utf8');
 const gallery=(await readFile(join(output,'tunnel/index.html'),'utf8')).replace('__CATALOG_VERSION__',catalogVersion);
 await writeFile(join(output,'tunnel/index.html'),gallery);
@@ -72,7 +68,6 @@ await writeFile(join(output,'sw.js'),"importScripts('./offline-worker.js?release
 const offline=new Set(['index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
 for(const path of await readdir(join(output,'tunnel'),{recursive:true}))if(/\.(js|json|html|css|webp)$/.test(path))offline.add('tunnel/'+path.replaceAll('\\','/'));
 offline.add('tunnel/catalog.json?v='+catalogVersion);
-offline.add('tunnel/albums.json?v='+catalogVersion);
 for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=original-20261021':''));offline.add(s.coverPath||'assets/covers/'+s.i+'.jpg');}
 const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;
 for(const s of meta.songs)if(s.previewWidth)offline.add('score-preview/'+s.i+'.webp');
