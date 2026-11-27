@@ -1,4 +1,6 @@
 """Build bounded display assets, preserving every original score and recording cover."""
+import base64
+import io
 import json,re
 from pathlib import Path
 from PIL import Image,ImageOps
@@ -28,6 +30,14 @@ if not (site/'tunnel/first-frame.webp').exists():
         with Image.open(covers/f'{song["i"]}.webp') as image:
             poster.paste(ImageOps.fit(image,(256,240)),((n%5)*256,(n//5)*240))
     poster.save(site/'tunnel/first-frame.webp','WEBP',quality=72,method=4)
+thumbnails={}
+for song in meta['songs']:
+    with Image.open(covers/f'{song["i"]}.webp') as image:
+        image.thumbnail((80,80),Image.Resampling.LANCZOS)
+        data=io.BytesIO()
+        image.save(data,'WEBP',quality=58,method=4)
+        thumbnails[song['i']]=base64.b64encode(data.getvalue()).decode('ascii')
+(root/'workbuddy/source/cover-thumbnails.json').write_text(json.dumps(thumbnails,separators=(',',':'))+'\n',encoding='utf8')
 meta_path.write_text(json.dumps(meta,ensure_ascii=False,indent=1)+'\n',encoding='utf8')
 print('Verified',len(meta['songs']),'readable score previews and small covers')
 print('Cover bytes:',sum(p.stat().st_size for p in covers.iterdir()))

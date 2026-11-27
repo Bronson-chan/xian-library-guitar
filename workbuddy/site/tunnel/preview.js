@@ -1,13 +1,14 @@
 import {prepareReader,openReader} from './reader-bridge.js?v=fast-1';
 const albumMode=new URLSearchParams(location.search).get('view')==='album';
 const engineReady=albumMode?null:import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
+const albumFlowReady=albumMode?import('./album-flow.js?v=cover-3'):null;
 const el=id=>document.getElementById(id);
 let controller,pool=[],active=null,paused=false,records={},catalog=[],offset=0,currentFilter='all',mountVersion=0,reading=false;
 try{records=JSON.parse(localStorage.getItem('wb_xiangu_v1')||'{}');}catch{}
 function select(index){selectSong(pool[index]);}
 function selectSong(song){
  active=song;if(!active)return;
- el('cover').hidden=false;el('open-label').textContent='打开曲谱';el('cover').src=active.cover;el('cover').alt=active.t+' 专辑封面';
+ el('cover').hidden=albumMode;el('open-label').textContent='打开曲谱';if(!albumMode)el('cover').src=active.cover;el('cover').alt=active.t+' 专辑封面';
  el('title').textContent=active.t;el('artist').textContent=active.a;
  el('open').href=el('song-link').href='../workbench.html#song='+active.i;
  el('song-link').setAttribute('aria-label','打开《'+active.t+'》的曲谱');prepareReader(active);
@@ -53,13 +54,13 @@ if(albumMode){
  el('stage').setAttribute('aria-label','曲库专辑');el('status').textContent='正在加载专辑…';
 }
 try{
- const response=await fetch('./catalog.json');if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();
+ const response=await fetch(el('cover-catalog').href);if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();
  if(albumMode){
-  const {mountAlbumFlow}=await import('./album-flow.js?v=glass-2');
+  const {mountAlbumFlow}=await albumFlowReady;
   const groups=new Map();
   for(const song of catalog){
    const key=song.a+'|'+(song.album||song.coverGroup||song.i);
-   if(!groups.has(key))groups.set(key,{artist:song.a,album:song.album,cover:song.cover,songs:[]});
+   if(!groups.has(key))groups.set(key,{artist:song.a,album:song.album,cover:song.cover,thumb:song.thumb,songs:[]});
    groups.get(key).songs.push(song);
   }
   const albums=[...groups.values()].sort((a,b)=>Number(b.songs.length>1)-Number(a.songs.length>1));

@@ -66,6 +66,7 @@ function tint(i,img){
 const clamp=n=>Math.max(0,Math.min(albums.length-1,n));
 let target=firstIndex,pos=target,current=-1,flipped=false,flipProgress=0,frame=0,last=0,drag=null,returnFocus=null,width=360,wheelCarry=0,wheelAt=0;
 let glassPromise,glassDirty=true,glassPending=false;
+let coverDetailTimer;
 function refreshGlass(){
  if(!flipped||flipProgress!==1||glassPending||!glassDirty||reading())return;
  glassDirty=false;glassPending=true;
@@ -85,9 +86,9 @@ function makeCard(i){
  const album=albums[i],card=document.createElement('article');card.className='card';
  const front=document.createElement('button');front.className='face front';front.type='button';front.dataset.album=i;
  front.setAttribute('aria-label','选择'+(album.album||album.songs[0].t));
- const image=new Image();image.src=album.cover;image.alt='';image.draggable=false;front.append(image);
- image.addEventListener('load',()=>{tint(i,image);glassDirty=true;refreshGlass();},{once:true});
- const mirror=document.createElement('img');mirror.className='album-reflection';mirror.src=album.cover;mirror.alt='';mirror.draggable=false;
+ const image=new Image();image.alt='';image.draggable=false;front.append(image);
+ image.addEventListener('load',()=>{tint(i,image);glassDirty=true;refreshGlass();});
+ const mirror=document.createElement('img');mirror.className='album-reflection';mirror.alt='';mirror.draggable=false;
  const back=document.createElement('section');back.className='face back';
  const heading=document.createElement('h2');heading.textContent=album.album||album.songs[0].t;
  const note=document.createElement('p');note.textContent=album.artist+' · '+album.songs.length+' 首曲谱';
@@ -98,13 +99,31 @@ function makeCard(i){
   const action=document.createElement('span');action.textContent='开谱 ›';button.append(label,action);
   button.onclick=()=>openScore(song,button);tracks.append(button);
  }
- const haze=document.createElement('img');haze.className='jacket-haze';haze.src=album.cover;haze.alt='';
- const thumb=document.createElement('img');thumb.className='jacket-thumb';thumb.src=album.cover;thumb.alt='';
+ const haze=document.createElement('img');haze.className='jacket-haze';haze.alt='';
+ const thumb=document.createElement('img');thumb.className='jacket-thumb';thumb.alt='';
  const detail=document.createElement('div');detail.className='jacket-detail';detail.append(heading,note);
  const close=document.createElement('button');close.type='button';close.className='jacket-close';close.textContent='×';close.setAttribute('aria-label','合上谱单');
  close.onclick=()=>{flip();el('flip').focus({preventScroll:true});};
  const jacket=document.createElement('header');jacket.className='jacket-heading';jacket.append(thumb,detail,close);
- back.append(haze,jacket,tracks);card.append(front,mirror,back);flow.append(card);cards.set(i,{card,front,back});
+ const layers=[image,mirror,haze,thumb];
+ for(const layer of layers)layer.src=album.thumb||album.cover;
+ back.append(haze,jacket,tracks);card.append(front,mirror,back);flow.append(card);cards.set(i,{card,front,back,layers});
+}
+function sharpenVisible(center){
+ clearTimeout(coverDetailTimer);
+ coverDetailTimer=setTimeout(()=>{
+  for(const i of [center,center-1,center+1,center-2,center+2]){
+   const item=cards.get(i);
+   if(!item||item.detailRequested||!albums[i].thumb)continue;
+   item.detailRequested=true;
+   const detail=new Image();
+   detail.fetchPriority='low';
+   detail.src=albums[i].cover;
+   detail.decode().then(()=>{
+    if(cards.get(i)===item)for(const layer of item.layers)layer.src=detail.src;
+   }).catch(()=>{item.detailRequested=false;});
+  }
+ },120);
 }
 function paint(){
  const center=Math.round(clamp(pos));
@@ -130,6 +149,7 @@ function paint(){
   el('album-initial').textContent=a.initial;
   setInitial(a.initial);el('prev').disabled=center===0;el('next').disabled=center===albums.length-1;
   tint(center,cards.get(center).front.querySelector('img'));
+  sharpenVisible(center);
   onSelect(a.songs[0]);
   el('title').textContent=a.album||a.songs[0].t;
   el('artist').textContent=a.artist+' · '+a.songs.length+' 首曲谱';

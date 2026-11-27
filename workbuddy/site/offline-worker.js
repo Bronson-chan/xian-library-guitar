@@ -7,7 +7,17 @@ self.addEventListener('fetch',e=>{
  const req=e.request,u=new URL(req.url);if(req.method!=='GET'||u.origin!==self.location.origin||!u.href.startsWith(scope))return;
  // The workbench shell must never replace the separate cover-roaming document.
  // Keep its modules on normal HTTP caching so a new deployment is immediately visible.
- if(u.pathname.startsWith(new URL('tunnel/',scope).pathname)){e.respondWith(fetch(req).catch(async()=>await caches.match(req,{ignoreSearch:true})||Response.error()));return;}
+ if(u.pathname.startsWith(new URL('tunnel/',scope).pathname)){
+  if(['catalog.json','albums.json'].some(name=>u.pathname===new URL('tunnel/'+name,scope).pathname)&&u.searchParams.has('v')){
+   e.respondWith((async()=>{
+    const c=await caches.open(SHELL),hit=await c.match(req)||await caches.match(req);
+    if(hit)return hit;
+    try{const response=await download(req);await c.put(req,response.clone());return response;}
+    catch{return await caches.match(req,{ignoreSearch:true})||(u.pathname.endsWith('/albums.json')&&await caches.match(absolute('tunnel/catalog.json'),{ignoreSearch:true}))||Response.error();}
+   })());return;
+  }
+  e.respondWith(fetch(req).catch(async()=>await caches.match(req,{ignoreSearch:true})||Response.error()));return;
+ }
  if(req.mode==='navigate'&&u.pathname.includes('/legacy/'))return;
  e.respondWith((async()=>{const nav=req.mode==='navigate',c=await caches.open(nav?SHELL:MEDIA),key=nav?(u.pathname===new URL('workbench.html',scope).pathname?absolute('workbench.html'):shellURL):req.url;
  const hit=await c.match(key)||(!nav?await caches.match(req):undefined);
