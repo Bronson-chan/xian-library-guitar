@@ -1,20 +1,17 @@
 import {prepareReader,openReader} from './reader-bridge.js?v=fast-1';
 const albumMode=new URLSearchParams(location.search).get('view')==='album';
 const engineReady=albumMode?null:import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
-const loadAlbumFlow=()=>import('./album-flow.js?v=sharp-1');
+const loadAlbumFlow=()=>import('./album-flow.js?v=sharp-2');
 const albumFlowReady=albumMode?loadAlbumFlow():null;
 const el=id=>document.getElementById(id);
 let controller,pool=[],active=null,paused=false,records={},catalog=[],offset=0,currentFilter='all',mountVersion=0,reading=false;
 let albumWarmup;
 function warmAlbumCovers(){
  if(albumWarmup||albumMode||!catalog.length)return;
- albumWarmup=loadAlbumFlow().then(async ({albumLayout,coverWindow})=>{
+ albumWarmup=loadAlbumFlow().then(async ({albumLayout,albumCoverSource,coverWindow})=>{
   const {albums,firstIndex}=albumLayout(catalog);
-  await Promise.allSettled(coverWindow(firstIndex,albums.length).map(i=>{
-   const image=new Image();
-   image.fetchPriority='low';image.src=albums[i].cover;
-   return image.decode();
-  }));
+  const packs=new Map();
+  await Promise.allSettled(coverWindow(firstIndex,albums.length).map(i=>albumCoverSource(albums[i],packs)));
  }).catch(()=>{albumWarmup=null;});
 }
 if(!albumMode){

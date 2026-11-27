@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/p
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { albumLayout } from '../workbuddy/site/tunnel/album-flow.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const meta = JSON.parse(await readFile(join(root, 'workbuddy/source/meta.json'), 'utf8'));
 if (meta.songs.length < 162 || meta.totalFiles !== meta.songs.length || new Set(meta.songs.map(s => s.i)).size !== meta.songs.length) throw Error('Expected at least 162 distinct songs and a matching catalog total');
@@ -50,6 +51,21 @@ const tunnelCatalog=await Promise.all(meta.songs.map(async s=>{
  const coverGroup=createHash('sha256').update(cover).digest('hex').slice(0,20);
  return {i:s.i,t:s.t,a:s.a,f:s.f,nl:s.nl,previewWidth:s.previewWidth,cover:'./covers/'+s.i+'.webp',album:s.album||'',coverGroup};
 }));
+// Bundle nearby album art in browse order, independently of the score media.
+const {albums}=albumLayout(tunnelCatalog,'https://build.invalid/tunnel/');
+const packDirectory=join(output,'tunnel/cover-packs');
+await mkdir(packDirectory);
+for(let start=0;start<albums.length;start+=16){
+ const songs=albums.slice(start,start+16).map(album=>album.songs[0]);
+ const entries=await Promise.all(songs.map(async song=>[
+  song.i,(await readFile(join(output,'tunnel/covers',song.i+'.webp'))).toString('base64')
+ ]));
+ const data=JSON.stringify(Object.fromEntries(entries));
+ const version=createHash('sha256').update(data).digest('hex').slice(0,12);
+ const file=(start/16)+'.json';
+ await writeFile(join(packDirectory,file),data);
+ for(const song of songs)song.coverPack='./cover-packs/'+file+'?v='+version;
+}
 const catalogData=JSON.stringify(tunnelCatalog);
 const catalogVersion=createHash('sha256').update(catalogData).digest('hex').slice(0,12);
 await writeFile(join(output,'tunnel/catalog.json'),catalogData);
@@ -66,7 +82,10 @@ const release=createHash('sha256').update(html+gallery+worker+pwaBoot).digest('h
 await writeFile(join(output,'offline-worker.js'),worker.replaceAll('__RELEASE__',release));
 await writeFile(join(output,'sw.js'),"importScripts('./offline-worker.js?release="+release+"');");
 const offline=new Set(['index.html','workbench.html','manifest.webmanifest','icon-192.png','icon-512.png','assets/hero.jpg',...Object.values(avatars)]);
-for(const path of await readdir(join(output,'tunnel'),{recursive:true}))if(/\.(js|json|html|css|webp)$/.test(path))offline.add('tunnel/'+path.replaceAll('\\','/'));
+for(const path of await readdir(join(output,'tunnel'),{recursive:true})){
+ const relative=path.replaceAll('\\','/');
+ if(!relative.startsWith('cover-packs/')&&/\.(js|json|html|css|webp)$/.test(relative))offline.add('tunnel/'+relative);
+}
 offline.add('tunnel/catalog.json?v='+catalogVersion);
 for(const s of meta.songs){offline.add('assets/tabs/'+s.i+'.jpg'+(s.i===156?'?v=original-20261021':''));offline.add(s.coverPath||'assets/covers/'+s.i+'.jpg');}
 const originals=JSON.parse(await readFile(join(root,'catalog/scores.json'),'utf8')).songs;

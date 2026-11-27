@@ -8,7 +8,7 @@ self.addEventListener('fetch',e=>{
  // The workbench shell must never replace the separate cover-roaming document.
  // Keep its modules on normal HTTP caching so a new deployment is immediately visible.
  if(u.pathname.startsWith(new URL('tunnel/',scope).pathname)){
-  const coverArt=u.pathname.startsWith(new URL('tunnel/covers/',scope).pathname);
+  const coverArt=['tunnel/covers/','tunnel/cover-packs/'].some(path=>u.pathname.startsWith(new URL(path,scope).pathname));
   if((coverArt||u.pathname===new URL('tunnel/catalog.json',scope).pathname)&&u.searchParams.has('v')){
    e.respondWith((async()=>{
     const c=await caches.open(coverArt?COVERS:SHELL),hit=await c.match(req)||await caches.match(req);

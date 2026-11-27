@@ -1,5 +1,5 @@
 // Position and drag follow the Album Flow HTML supplied with the design.
-export function albumLayout(songs){
+export function albumLayout(songs,baseURL=document.baseURI){
  const collator=new Intl.Collator('zh-Hans-u-co-pinyin');
  const initials='ABCDEFGHJKLMNOPQRSTWXYZ', bounds='阿芭擦搭蛾发噶哈击喀垃妈拿哦啪期然撒塌挖夕压匝';
  function initialOf(name){
@@ -13,9 +13,9 @@ export function albumLayout(songs){
  for(const song of songs){
   const key=song.a+'|'+(song.album||song.coverGroup||song.i);
   if(!groups.has(key)){
-   const cover=new URL(song.cover,document.baseURI);
+   const cover=new URL(song.cover,baseURL);
    if(song.coverGroup)cover.searchParams.set('v',song.coverGroup);
-   groups.set(key,{artist:song.a,album:song.album,cover:cover.href,initial:initialOf(song.a),songs:[]});
+   groups.set(key,{artist:song.a,album:song.album,cover:cover.href,pack:song.coverPack&&new URL(song.coverPack,baseURL).href,initial:initialOf(song.a),songs:[]});
   }
   groups.get(key).songs.push(song);
  }
@@ -35,6 +35,21 @@ export function coverWindow(center,length){
  return indexes;
 }
 
+export async function albumCoverSource(album,packs){
+ if(!album.pack)return album.cover;
+ if(!packs.has(album.pack)){
+  packs.set(album.pack,fetch(album.pack,{signal:AbortSignal.timeout(5000)}).then(response=>{
+   if(!response.ok)throw Error('封面包未加载');
+   return response.json();
+  }).catch(()=>{
+   packs.delete(album.pack);
+   return null;
+  }));
+ }
+ const image=(await packs.get(album.pack))?.[album.songs[0].i];
+ return image?'data:image/webp;base64,'+image:album.cover;
+}
+
 export function mountAlbumFlow(view,{albums,firstIndex},{onSelect,onOpen}){
  view.innerHTML=`<div class="flow" id="flow" role="region" aria-label="专辑封面" tabindex="0"></div>
  <div class="foot"><span id="album-initial" aria-hidden="true"></span><div class="controls"><button class="arrow" id="prev" aria-label="上一张专辑">‹</button><button id="flip" aria-expanded="false">查看谱单</button><button class="arrow" id="next" aria-label="下一张专辑">›</button></div>
@@ -47,6 +62,7 @@ const reading=()=>document.getElementById('cover-reader')?.hidden===false;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 const cards=new Map();
 const covers=new Map();
+const packs=new Map();
 const lighting=document.createElement('canvas');lighting.width=lighting.height=8;
 const light=lighting.getContext('2d',{willReadFrequently:true});
 const palette=new Map();
@@ -104,9 +120,12 @@ function loadCover(i,priority){
   if(state==='error')image.removeAttribute('src');
   wake();
  };
- entry.timer=setTimeout(()=>finish('error'),6000);
- image.src=albums[i].cover;
- image.decode().then(()=>finish('ready'),()=>finish('error'));
+ entry.timer=setTimeout(()=>finish('error'),11000);
+ albumCoverSource(albums[i],packs).then(src=>{
+  if(covers.get(i)!==entry||entry.state!=='loading')return;
+  image.src=src;
+  return image.decode().then(()=>finish('ready'));
+ }).catch(()=>finish('error'));
 }
 function prepareCovers(center){
  const visible=coverWindow(center,albums.length);
