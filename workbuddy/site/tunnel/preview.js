@@ -1,9 +1,24 @@
 import {prepareReader,openReader} from './reader-bridge.js?v=fast-1';
 const albumMode=new URLSearchParams(location.search).get('view')==='album';
 const engineReady=albumMode?null:import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
-const albumFlowReady=albumMode?import('./album-flow.js?v=cover-3'):null;
+const loadAlbumFlow=()=>import('./album-flow.js?v=cover-3');
+const albumFlowReady=albumMode?loadAlbumFlow():null;
 const el=id=>document.getElementById(id);
 let controller,pool=[],active=null,paused=false,records={},catalog=[],offset=0,currentFilter='all',mountVersion=0,reading=false;
+let albumWarmup;
+function warmAlbumCatalog(){
+ if(albumWarmup||albumMode)return;
+ const url=new URL(el('cover-catalog').href);
+ url.pathname=url.pathname.replace(/catalog\.json$/,'albums.json');
+ albumWarmup=fetch(url,{priority:'low'}).then(response=>{
+  if(!response.ok)throw Error('Album preview unavailable');
+  return response.arrayBuffer();
+ }).then(()=>true).catch(()=>{albumWarmup=null;});
+}
+if(!albumMode){
+ el('album-mode').addEventListener('pointerenter',warmAlbumCatalog);
+ el('album-mode').addEventListener('focus',warmAlbumCatalog);
+}
 try{records=JSON.parse(localStorage.getItem('wb_xiangu_v1')||'{}');}catch{}
 function select(index){selectSong(pool[index]);}
 function selectSong(song){
@@ -35,7 +50,12 @@ async function mount(filter){
    const blend=document.createElement('style');blend.textContent='.aw-scene{background:#101119}.aw-scene #stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,#101119,transparent 14%,transparent 86%,#101119),linear-gradient(180deg,#101119,transparent 3%,transparent 93%,#101119)}';controller.root.append(blend);
   }
   await controller.ready;if(version!==mountVersion)return;pool=next;controller.update({onSelect:select});select(0);
-  if(controller.root.querySelector('[data-ready=true]'))el('first-frame').hidden=true;
+  if(controller.root.querySelector('[data-ready=true]')){
+   el('first-frame').hidden=true;
+   if(!navigator.connection?.saveData&&!navigator.connection?.effectiveType?.endsWith('2g')){
+    setTimeout(()=>{if(!document.hidden&&!reading)warmAlbumCatalog();},750);
+   }
+  }
  }catch(error){el('status').hidden=false;el('status').textContent='封面暂未加载，仍可打开曲谱或进入工作台。';console.error(error);}
 }
 document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{offset=0;mount(b.dataset.filter);}));
