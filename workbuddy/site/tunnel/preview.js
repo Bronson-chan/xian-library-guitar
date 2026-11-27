@@ -1,10 +1,12 @@
 import {prepareReader,openReader} from './reader-bridge.js?v=fast-1';
-const engineReady=import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
+const albumMode=new URLSearchParams(location.search).get('view')==='album';
+const engineReady=albumMode?null:import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
 const el=id=>document.getElementById(id);
 let controller,pool=[],active=null,paused=false,records={},catalog=[],offset=0,currentFilter='all',mountVersion=0,reading=false;
 try{records=JSON.parse(localStorage.getItem('wb_xiangu_v1')||'{}');}catch{}
-function select(index){
- active=pool[index];if(!active)return;
+function select(index){selectSong(pool[index]);}
+function selectSong(song){
+ active=song;if(!active)return;
  el('cover').hidden=false;el('open-label').textContent='打开曲谱';el('cover').src=active.cover;el('cover').alt=active.t+' 专辑封面';
  el('title').textContent=active.t;el('artist').textContent=active.a;
  el('open').href=el('song-link').href='../workbench.html#song='+active.i;
@@ -40,11 +42,28 @@ el('batch').addEventListener('click',()=>{offset+=48;mount(currentFilter);});
 el('pause').addEventListener('click',()=>{paused=!paused;controller?.update({paused:paused||reading});el('pause').textContent=paused?'继续':'暂停';el('pause').setAttribute('aria-pressed',String(paused));el('play-state').textContent=paused?'已暂停':'漫游中';el('play-state').dataset.paused=String(paused);});
 function enterScore(e){if(!active||e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();openReader(active);}
 el('open').addEventListener('click',enterScore);el('song-link').addEventListener('click',enterScore);
-addEventListener('xian-cover-active',e=>{reading=!e.detail;controller?.update({paused:paused||reading});if(e.detail){try{records=JSON.parse(localStorage.getItem('wb_xiangu_v1')||'{}');}catch{}if(currentFilter!=='all')mount(currentFilter);}});
+addEventListener('xian-cover-active',e=>{reading=!e.detail;controller?.update({paused:paused||reading});if(e.detail){try{records=JSON.parse(localStorage.getItem('wb_xiangu_v1')||'{}');}catch{}if(!albumMode&&currentFilter!=='all')mount(currentFilter);}});
 addEventListener('pagehide',e=>{if(e.persisted)controller?.update({paused:true});else destroy();});
-addEventListener('pageshow',e=>{if(e.persisted){if(controller)controller.update({paused:paused||reading});else mount(currentFilter);}});
+addEventListener('pageshow',e=>{if(e.persisted){if(controller)controller.update({paused:paused||reading});else if(!albumMode)mount(currentFilter);}});
 document.addEventListener('visibilitychange',()=>controller?.update({paused:document.hidden||paused||reading}));
+if(albumMode){
+ document.querySelector('.shell').classList.add('album-mode');
+ el('tunnel-mode').removeAttribute('aria-current');el('album-mode').setAttribute('aria-current','page');
+ el('nav-fallback').hidden=true;el('first-frame').hidden=true;el('play-state').textContent='专辑浏览';
+ el('stage').setAttribute('aria-label','曲库专辑');el('status').textContent='正在加载专辑…';
+}
 try{
- const response=await fetch('./catalog.json');if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();mount('all');
- import('./glass-nav.js?v=fast-1').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
+ const response=await fetch('./catalog.json');if(!response.ok)throw Error('曲库清单未加载');catalog=await response.json();
+ if(albumMode){
+  const {mountAlbumFlow}=await import('./album-flow.js?v=glass-2');
+  const groups=new Map();
+  for(const song of catalog){
+   const key=song.a+'|'+(song.album||song.coverGroup||song.i);
+   if(!groups.has(key))groups.set(key,{artist:song.a,album:song.album,cover:song.cover,songs:[]});
+   groups.get(key).songs.push(song);
+  }
+  const albums=[...groups.values()].sort((a,b)=>Number(b.songs.length>1)-Number(a.songs.length>1));
+  mountAlbumFlow(el('album-view'),albums,{onSelect:selectSong,onOpen:openReader});el('status').hidden=true;
+ }else mount('all');
+ if(!albumMode)import('./glass-nav.js?v=fast-1').catch(error=>{document.querySelector('.toolbar').hidden=false;console.error(error);});
 }catch(error){el('status').hidden=false;el('status').textContent='曲库暂未加载，请进入工作台。';console.error(error);}

@@ -45,10 +45,10 @@ await mkdir(output);
 await cp(join(root, 'workbuddy/site'), output, { recursive: true });
 await rename(legacy, join(output, 'legacy'));
 await writeFile(join(output, '.nojekyll'), '');
-const original=JSON.parse(html.match(/var VERIFIED_ALBUM_COVERS = (.*);/)[1]);
-const tunnelCatalog=meta.songs.map(s=>{
- return {i:s.i,t:s.t,a:s.a,f:s.f,nl:s.nl,previewWidth:s.previewWidth,cover:'./covers/'+s.i+'.webp'};
-});
+const tunnelCatalog=await Promise.all(meta.songs.map(async s=>{
+ const cover=await readFile(join(output,'tunnel/covers',s.i+'.webp'));
+ return {i:s.i,t:s.t,a:s.a,f:s.f,nl:s.nl,previewWidth:s.previewWidth,cover:'./covers/'+s.i+'.webp',album:s.album||'',coverGroup:createHash('sha256').update(cover).digest('hex').slice(0,20)};
+}));
 await writeFile(join(output,'tunnel/catalog.json'),JSON.stringify(tunnelCatalog));
 const worker=await readFile(join(root,'workbuddy/site/offline-worker.js'),'utf8');
 const gallery=await readFile(join(output,'tunnel/index.html'),'utf8');

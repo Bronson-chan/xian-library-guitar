@@ -43,7 +43,7 @@ source=source.replace('let dpr=1;','let sourceWidth=0,sourceHeight=0;\n  functio
 // No second perpetual render loop: draw only while a menu spring or click ripple
 // is moving. Closed and settled menus consume no animation frames.
 source=source.replace('(gl||springs.some(s=>Math.abs(s.value-s.target)>.001||Math.abs(s.vel)>.001))','(springs.some(s=>Math.abs(s.value-s.target)>.001||Math.abs(s.vel)>.001)||(active&&time-rippleTime<1.2))');
-await writeFile(out+'/LiquidGlassNavigationEngine.js',source);
+await writeFile(out+'/LiquidGlassNavigationEngine.js',source+'\nexport {vertex as glassVertex, fragment as glassFragment};\n');
 const runtime=pkg.files.find(f=>f.path==='motion-runtime.ts').content;
 await writeFile(out+'/motion-runtime.js',stripTypeScriptTypes(runtime));
 await writeFile(out+'/source-receipt.json',JSON.stringify({source:'User supplied Liquid Glass Navigation complete code package',files:pkg.files.filter(f=>/Engine\.js$|motion-runtime\.ts$/.test(f.path)).map(({path,sha256})=>({path,sha256}))},null,2));

@@ -137,4 +137,4 @@ export function mountLiquidGlassNavigation(target,options={}){
     update(next){surface.controller.update(next);component.update(next);},
     destroy(){component.destroy();surface.controller.destroy();},
   };
-}
+}export {vertex as glassVertex, fragment as glassFragment};
