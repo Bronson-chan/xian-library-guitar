@@ -26,13 +26,16 @@ export function albumLayout(songs,baseURL=document.baseURI){
  return {albums,firstIndex:initialIndex<0?Math.floor(mid):initialIndex};
 }
 
+const wrapIndex=(index,length)=>((index%length)+length)%length;
+
 export function coverWindow(center,length){
- const indexes=[center];
+ if(!length)return [];
+ const indexes=new Set([wrapIndex(center,length)]);
  for(let distance=1;distance<=5;distance++){
-  if(center+distance<length)indexes.push(center+distance);
-  if(center-distance>=0)indexes.push(center-distance);
+  indexes.add(wrapIndex(center+distance,length));
+  indexes.add(wrapIndex(center-distance,length));
  }
- return indexes;
+ return [...indexes];
 }
 
 export async function albumCoverSource(album,packs){
@@ -77,7 +80,7 @@ albums.forEach((a,i)=>{if(!initialsByAlbum.has(a.initial))initialsByAlbum.set(a.
 for(const letter of [...initialsByAlbum.keys()]){
  const button=document.createElement('button');button.textContent=letter;
  button.setAttribute('aria-label',letter+' 开头的歌手');
- button.onclick=()=>go(initialsByAlbum.get(letter),true);index.append(button);indexButtons.set(letter,button);
+ button.onclick=()=>goToAlbum(initialsByAlbum.get(letter),true);index.append(button);indexButtons.set(letter,button);
 }
 let activeInitial;
 function positionIndexLight(){
@@ -104,7 +107,9 @@ function tint(i,img){
  }
  if(i===current&&palette.has(i))view.style.setProperty('--glow',palette.get(i));
 }
-const clamp=n=>Math.max(0,Math.min(albums.length-1,n));
+const albumIndex=i=>wrapIndex(i,albums.length);
+const half=Math.floor(albums.length/2);
+const shortestOffset=distance=>albumIndex(distance+half)-half;
 let target=firstIndex,pos=target,current=-1,flipped=false,flipProgress=0,frame=0,last=0,drag=null,returnFocus=null,width=360,wheelCarry=0,wheelAt=0;
 let glassPromise,glassDirty=true,glassPending=false;
 let preparedCenter=-1,preparedTarget=-1,jump=false;
@@ -128,14 +133,15 @@ function loadCover(i,priority){
  }).catch(()=>finish('error'));
 }
 function prepareCovers(center){
+ center=albumIndex(center);
+ const destination=albumIndex(target);
  const visible=coverWindow(center,albums.length);
- if(center!==preparedCenter||target!==preparedTarget){
-  preparedCenter=center;preparedTarget=target;
-  const wanted=new Set([...visible,...coverWindow(target,albums.length)]);
+ if(center!==preparedCenter||destination!==preparedTarget){
+  preparedCenter=center;preparedTarget=destination;
+  const wanted=new Set([...visible,...coverWindow(destination,albums.length)]);
   // Read ahead in both directions, with extra room in the direction of travel.
   for(let offset=-8;offset<=8;offset++){
-   const i=target+offset+Math.sign(target-pos)*3;
-   if(i>=0&&i<albums.length)wanted.add(i);
+   wanted.add(albumIndex(target+offset+Math.sign(target-pos)*3));
   }
   for(const [i,entry] of covers){
    if(wanted.has(i)||cards.has(i))continue;
@@ -153,7 +159,7 @@ function refreshGlass(){
  glassPromise??=import('./album-glass.js?v=2').then(module=>module.createAlbumGlass()).catch(()=>null);
  glassPromise.then(glass=>{
   if(glass&&flipped&&flipProgress===1&&!reading()){
-   try{glass.render(cards.get(target).back,flow,cards.values());}catch(error){console.warn('专辑玻璃折射暂不可用',error);}
+   try{glass.render(cards.get(albumIndex(target)).back,flow,cards.values());}catch(error){console.warn('专辑玻璃折射暂不可用',error);}
   }
  }).finally(()=>{glassPending=false;if(glassDirty)refreshGlass();});
 }
@@ -194,28 +200,30 @@ function makeCard(i){
  back.append(haze,jacket,tracks);card.append(front,mirror,back);flow.append(card);cards.set(i,{card,front,back});
 }
 function paint(){
- const center=Math.round(clamp(pos));
- for(const [i,item] of cards)if(Math.abs(i-center)>5){item.card.remove();cards.delete(i);}
- for(let i=Math.max(0,center-5);i<=Math.min(albums.length-1,center+5);i++)if(!cards.has(i))makeCard(i);
+ const positionIndex=Math.round(pos);
+ const center=albumIndex(positionIndex),selected=albumIndex(target);
+ const visible=coverWindow(center,albums.length);
+ for(const [i,item] of cards)if(!visible.includes(i)){item.card.remove();cards.delete(i);}
+ for(const i of visible)if(!cards.has(i))makeCard(i);
  for(const [i,{card,front,back}] of cards){
-  const d=i-pos,s=Math.sign(d),a=Math.abs(d);
+  const d=shortestOffset(i-center)+(positionIndex-pos),s=Math.sign(d),a=Math.abs(d);
   const x=a<1?d*GAP:s*(GAP+(a-1)*STEP),rotation=a<1?-d*ANG:-s*ANG;
-  const k=i===target?flipProgress:0;
+  const k=i===selected?flipProgress:0;
   const flipAngle=(k<.5?2*k*k:1-2*(1-k)*(1-k))*180;
   const z=-Math.min(a,1)*DEPTH+Math.sin(Math.min(1,k*1.4)*Math.PI/2)*.55;
-  card.classList.toggle('turning',k>0||i===target&&flipped);
+  card.classList.toggle('turning',k>0||i===selected&&flipped);
   const zoom=1+(innerWidth>650?.16:.12)*Math.max(0,1-a)*(1-k);
   const lift=-(zoom-1)*width*.5;
   card.style.transform='translate3d('+x*width+'px,'+lift+'px,'+z*width+'px) rotateY('+(rotation+flipAngle)+'deg) scale('+zoom+')';
   card.style.zIndex=String(k>0?999:500-Math.round(a*10));
-  front.inert=i===target&&(flipped||k>.5);front.tabIndex=i===center&&!flipped?0:-1;
-  back.inert=i!==target||!flipped||k<.55;
+  front.inert=i===selected&&(flipped||k>.5);front.tabIndex=i===center&&!flipped?0:-1;
+  back.inert=i!==selected||!flipped||k<.55;
  }
  if(center!==current){
   current=center;const a=albums[center];el('title').textContent=a.album||a.songs[0].t;
   el('count').textContent=(center+1)+' / '+albums.length+' 组封面';
   el('album-initial').textContent=a.initial;
-  setInitial(a.initial);el('prev').disabled=center===0;el('next').disabled=center===albums.length-1;
+  setInitial(a.initial);
   tint(center,cards.get(center).front.querySelector('img'));
   onSelect(a.songs[0]);
   el('title').textContent=a.album||a.songs[0].t;
@@ -246,8 +254,12 @@ function setFlipped(value){
  flipped=value;view.classList.toggle('has-flip',value);
  const button=el('flip');button.textContent=value?'合上谱单':'查看谱单';button.setAttribute('aria-expanded',String(value));
 }
-function go(value,skip=false){target=clamp(value);jump=skip;setFlipped(false);flipProgress=0;wake();}
-function flip(){if(current<0)return;target=current;jump=true;setFlipped(!flipped);wake();}
+function go(value,skip=false){target=albums.length>1?value:0;jump=skip;setFlipped(false);flipProgress=0;wake();}
+function goToAlbum(index,skip=false){
+ const positionIndex=Math.round(pos);
+ go(positionIndex+shortestOffset(index-albumIndex(positionIndex)),skip);
+}
+function flip(){if(current<0)return;target=Math.round(pos);jump=true;setFlipped(!flipped);wake();}
 flow.addEventListener('wheel',e=>{
  if(e.ctrlKey||flipped||reading())return;
  e.preventDefault();const now=performance.now();if(now-wheelAt>200)wheelCarry=0;wheelAt=now;
@@ -265,7 +277,7 @@ flow.addEventListener('pointermove',e=>{
  if(!drag.moved){flow.setPointerCapture(e.pointerId);flow.classList.add('drag');setFlipped(false);flipProgress=0;}
  drag.moved=true;
  const now=performance.now();drag.v=-(e.clientX-drag.lastX)/Math.max(12,now-drag.at);drag.at=now;drag.lastX=e.clientX;
- drag.position=clamp(drag.p-dx/(width*STEP*2.2));wake();
+ drag.position=albums.length>1?drag.p-dx/(width*STEP*2.2):0;wake();
 });
 flow.addEventListener('pointerup',e=>{
  if(drag?.id!==e.pointerId)return;
@@ -273,7 +285,7 @@ flow.addEventListener('pointerup',e=>{
  if(d.moved){go(Math.round(d.position+(performance.now()-d.at<100?Math.max(-2,Math.min(2,d.v*1.5)):0)));return;}
 });
 flow.addEventListener('pointercancel',()=>{if(drag){drag=null;flow.classList.remove('drag');go(Math.round(pos));}});
-flow.addEventListener('click',e=>{const front=e.target.closest('[data-album]');if(!front)return;const i=+front.dataset.album;if(i===current)flip();else go(i);});
+flow.addEventListener('click',e=>{const front=e.target.closest('[data-album]');if(!front)return;const i=+front.dataset.album;if(i===current)flip();else goToAlbum(i);});
 addEventListener('keydown',e=>{
  if(reading()||e.target.closest('input')||e.altKey||e.ctrlKey||e.metaKey)return;
  if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();go(target+(e.key==='ArrowRight'?1:-1));}
@@ -281,6 +293,7 @@ addEventListener('keydown',e=>{
  if(e.key==='Enter'&&e.target===flow){e.preventDefault();flip();}
 });
 el('prev').onclick=()=>go(target-1);el('next').onclick=()=>go(target+1);el('flip').onclick=flip;
+el('prev').disabled=el('next').disabled=albums.length<2;
 
 
 function openScore(song,trigger){

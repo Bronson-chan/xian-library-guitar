@@ -1,7 +1,7 @@
 import {prepareReader,openReader} from './reader-bridge.js?v=fast-1';
 const albumMode=new URLSearchParams(location.search).get('view')==='album';
 const engineReady=albumMode?null:import('./vendor/AlbumCoverTunnelEngine.js?v=fast-1');
-const loadAlbumFlow=()=>import('./album-flow.js?v=sharp-2');
+const loadAlbumFlow=()=>import('./album-flow.js?v=loop-1');
 const albumFlowReady=albumMode?loadAlbumFlow():null;
 const el=id=>document.getElementById(id);
 let controller,pool=[],active=null,paused=false,records={},catalog=[],offset=0,currentFilter='all',mountVersion=0,reading=false;
